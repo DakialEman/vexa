@@ -57,9 +57,13 @@ Para armar el instalador de Windows, desde una maquina con Windows:
 npm run dist
 ```
 
-Deja `dist/Vexa-0.1.0-instalador.exe`. Ese archivo se copia a las dos
-computadoras y se instala como cualquier programa: pregunta donde instalarlo y
-deja el acceso directo en el escritorio y en el menu de inicio.
+Deja dos archivos, y alcanza con cualquiera de los dos:
+
+- `dist/Vexa-0.1.0-instalador.exe` — se instala como cualquier programa:
+  pregunta donde ponerlo y deja los accesos directos.
+- `dist/Vexa-0.1.0-portable.exe` — no se instala: se abre y listo. Util para
+  probarlo o para llevarlo en un pendrive. La primera vez tarda unos segundos
+  mas porque se descomprime solo.
 
 Para probar el empaquetado sin armar el instalador:
 
@@ -87,6 +91,36 @@ npm run dist
 Si al instalar `wine32:i386` apt se queja de `libgd3`, es porque esta buscando
 una version de un repositorio de terceros. Se resuelve fijando la del repo
 oficial: `apt-get install -y libgd3=2.3.3-9ubuntu5`.
+
+### Si hay que partir el instalador para mandarlo
+
+Pesa casi 100 MB, asi que a veces hay que partirlo. Si se hace, conviene que
+los pedazos **no** terminen en `.exe`: el primer pedazo de un instalador NSIS
+empieza igual que un ejecutable de verdad, Windows lo muestra como programa, y
+si alguien le hace doble clic recibe un "Installer integrity check has failed"
+que parece un archivo roto pero es solo un pedazo suelto. Con la extension
+`.bin` el malentendido no puede pasar.
+
+Para volver a unirlos alcanza con `copy /b parte1+parte2+... salida.exe`, pero
+conviene verificar el SHA-256 del resultado contra el original.
+
+### Como verificar que un instalador NSIS esta sano
+
+NSIS guarda un CRC32 al final de sus datos. Lo que hay que saber es que **se
+calcula desde el byte 512**, no desde el principio del archivo: los primeros
+512 bytes son la cabecera PE, que queda afuera a proposito para que ponerle un
+icono o firmarlo no invalide el chequeo.
+
+```js
+const inicio = archivo.indexOf(Buffer.from('NullsoftInst')) - 8;
+const flags = archivo.readUInt32LE(inicio);          // bit 4 = sin CRC
+const fin = inicio + archivo.readUInt32LE(inicio + 24);
+const guardado = archivo.readUInt32LE(fin - 4);
+const calculado = zlib.crc32(archivo.subarray(512, fin - 4)) >>> 0;
+```
+
+Los ejecutables `portable` vienen con el bit "sin CRC" prendido: ahi no hay
+nada que verificar y no significa que esten rotos.
 
 ### Sobre el aviso de Windows
 

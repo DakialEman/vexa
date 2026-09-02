@@ -38,6 +38,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "Vexa-${version}-instalador.${ext}"
@@ -56,6 +62,14 @@
       ],
       "category": "AudioVideo",
       "artifactName": "Vexa-${version}.${ext}"
+    },
+    "compression": "maximum",
+    "electronLanguages": [
+      "es",
+      "en-US"
+    ],
+    "portable": {
+      "artifactName": "Vexa-${version}-portable.${ext}"
     }
   }
 }
