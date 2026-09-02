@@ -67,8 +67,33 @@ Para probar el empaquetado sin armar el instalador:
 npm run empaquetar   # deja la app suelta en dist/
 ```
 
-> El instalador de Windows hay que armarlo **en Windows**. Desde Linux
-> electron-builder necesita wine para hacerlo.
+Deja tambien `dist/Vexa-0.1.0-instalador.exe.blockmap` y `latest.yml`, que
+sirven para actualizaciones automaticas mas adelante. Por ahora se pueden
+ignorar.
+
+### Armarlo desde Linux
+
+Se puede, pero electron-builder necesita wine con soporte de 32 bits (NSIS
+compila el desinstalador corriendo un ejecutable de 32 bits). En Ubuntu 24.04:
+
+```bash
+dpkg --add-architecture i386
+apt-get update
+apt-get install -y --no-install-recommends wine wine64 wine32:i386
+rm -rf ~/.wine && wineboot -u          # el prefijo se crea con los dos
+npm run dist
+```
+
+Si al instalar `wine32:i386` apt se queja de `libgd3`, es porque esta buscando
+una version de un repositorio de terceros. Se resuelve fijando la del repo
+oficial: `apt-get install -y libgd3=2.3.3-9ubuntu5`.
+
+### Sobre el aviso de Windows
+
+El instalador no esta firmado con un certificado (cuestan plata por año), asi
+que Windows va a mostrar el cartel azul de SmartScreen la primera vez.
+Se abre con "Mas informacion" y despues "Ejecutar de todas formas". Es lo
+normal para cualquier programa sin firmar.
 
 ## Estructura
 
@@ -172,7 +197,8 @@ Puntos 1 y 2 del plan terminados.
 - La barra cuenta cuantos bloqueos hubo en la pagina actual.
 
 **Empaquetado:** listo, con icono propio y instalador de Windows con pasos
-(ver "Como se instala").
+(ver "Como se instala"). Verificado: se armo el instalador de 106 MB, con la
+app incrustada adentro, y el ejecutable empaquetado abre y navega.
 
 ## Limites conocidos
 
