@@ -42,6 +42,26 @@ contextBridge.exposeInMainWorld('vexa', {
   reintentar: () => ipcRenderer.send('vexa:accion', 'reintentar'),
   abrirPopupBloqueado: () => ipcRenderer.send('vexa:accion', 'abrir-popup-bloqueado'),
 
+  // --- Sesion compartida con el amigo ---
+
+  /** Servidores STUN para armar la conexion. */
+  configuracionIce: () => ipcRenderer.invoke('vexa:config-ice'),
+
+  /** Arma el codigo de invitacion o de respuesta que se le pasa al amigo. */
+  armarCodigo: (tipo, sdp) => ipcRenderer.invoke('vexa:armar-codigo', tipo, sdp),
+
+  /** Lee un codigo pegado por el usuario. */
+  leerCodigo: (texto) => ipcRenderer.invoke('vexa:leer-codigo', texto),
+
+  /** Copia texto al portapapeles. */
+  copiar: (texto) => ipcRenderer.invoke('vexa:copiar', texto),
+
+  /** 'solo', 'anfitrion' (transmitis) o 'espectador' (mirás lo que abre el otro). */
+  modo: (cual) => ipcRenderer.send('vexa:modo', cual),
+
+  /** Avisa si el panel de sesion esta tapando el navegador. */
+  panel: (abierto) => ipcRenderer.send('vexa:panel', abierto),
+
   /** Cierra la ventana desde la interfaz. */
   cerrarVentana: () => ipcRenderer.send('vexa:cerrar'),
 

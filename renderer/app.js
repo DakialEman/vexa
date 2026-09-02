@@ -20,6 +20,39 @@ const elementos = {
   volver: document.getElementById('boton-volver'),
   lineaVersion: document.getElementById('linea-version'),
   aviso: document.getElementById('aviso'),
+
+  // Panel de sesion
+  botonSesion: document.getElementById('boton-sesion'),
+  pantallaSesion: document.getElementById('pantalla-sesion'),
+  elegir: document.getElementById('sesion-elegir'),
+  bloqueAnfitrion: document.getElementById('sesion-anfitrion'),
+  bloqueEspectador: document.getElementById('sesion-espectador'),
+  botonInvitar: document.getElementById('boton-invitar'),
+  botonUnirme: document.getElementById('boton-unirme'),
+  codigoInvitacion: document.getElementById('codigo-invitacion'),
+  botonCopiarInvitacion: document.getElementById('boton-copiar-invitacion'),
+  respuestaRecibida: document.getElementById('respuesta-recibida'),
+  botonConectar: document.getElementById('boton-conectar'),
+  invitacionRecibida: document.getElementById('invitacion-recibida'),
+  botonResponder: document.getElementById('boton-responder'),
+  pasoRespuesta: document.getElementById('paso-respuesta'),
+  codigoRespuesta: document.getElementById('codigo-respuesta'),
+  botonCopiarRespuesta: document.getElementById('boton-copiar-respuesta'),
+  botonCortar: document.getElementById('boton-cortar'),
+  estadoSesion: document.getElementById('estado-sesion'),
+  estadoSesionTexto: document.getElementById('estado-sesion-texto'),
+  videoRemoto: document.getElementById('video-remoto'),
+};
+
+// Como se lee en pantalla cada estado de la conexion con el amigo.
+const ESTADOS = {
+  new: { texto: 'Sin conexion.', tono: 'neutro' },
+  connecting: { texto: 'Conectando con tu amigo…', tono: 'trabajando' },
+  connected: { texto: 'Conectados.', tono: 'ok' },
+  disconnected: { texto: 'Se corto la conexion. Reintentando…', tono: 'trabajando' },
+  failed: { texto: 'No se pudo conectar. Prueben de nuevo con codigos nuevos.', tono: 'error' },
+  closed: { texto: 'Sin conexion.', tono: 'neutro' },
+  desconocido: { texto: 'Estado desconocido.', tono: 'neutro' },
 };
 
 // Dibujos del boton central: recargar cuando esta quieto, cruz cuando carga.
@@ -30,6 +63,12 @@ const DIBUJO_DETENER = 'M18 6 6 18M6 6l12 12';
 let editandoBarra = false;
 let temporizadorAviso = 0;
 
+// Que pantalla de Vexa se ve cuando el navegador interno no esta tapando.
+let pantallaElegida = 'inicio';
+
+// La sesion compartida con el amigo (ver conexion.js).
+let sesion = null;
+
 function mostrarAviso(texto) {
   elementos.aviso.textContent = texto;
   elementos.aviso.classList.add('visible');
@@ -37,10 +76,14 @@ function mostrarAviso(texto) {
   temporizadorAviso = setTimeout(() => elementos.aviso.classList.remove('visible'), 4000);
 }
 
-/** Elige que pantalla de Vexa se ve detras del navegador: inicio, error o ninguna. */
+/** Elige que pantalla de Vexa se ve detras del navegador: inicio, error o sesion. */
 function mostrarPantalla(cual) {
+  pantallaElegida = cual;
   elementos.pantallaInicio.classList.toggle('visible', cual === 'inicio');
   elementos.pantallaError.classList.toggle('visible', cual === 'error');
+  elementos.pantallaSesion.classList.toggle('visible', cual === 'sesion');
+  // El navegador interno es una capa nativa: para ver el panel hay que taparlo.
+  window.vexa.panel(cual === 'sesion');
 }
 
 function pintarEstado(estado) {
@@ -61,9 +104,21 @@ function pintarEstado(estado) {
   elementos.insignia.classList.toggle('visible', estado.popupsBloqueados > 0);
   elementos.insignia.disabled = !estado.hayPopupBloqueado;
 
-  // Si el navegador esta visible, tapa todo: no hace falta pantalla de fondo.
-  if (estado.visible) mostrarPantalla('ninguna');
-  else if (!elementos.pantallaError.classList.contains('visible')) mostrarPantalla('inicio');
+  // Si el navegador esta visible tapa todo; si no, se ve la pantalla elegida.
+  const tapado = estado.visible;
+  elementos.pantallaInicio.classList.toggle('visible', !tapado && pantallaElegida === 'inicio');
+  elementos.pantallaError.classList.toggle('visible', !tapado && pantallaElegida === 'error');
+  elementos.pantallaSesion.classList.toggle('visible', !tapado && pantallaElegida === 'sesion');
+
+  // De espectador no se navega: la barra queda de solo lectura.
+  const mirando = estado.modo === 'espectador';
+  elementos.entrada.readOnly = mirando;
+  elementos.entrada.placeholder = mirando
+    ? 'Estás mirando lo que abre tu amigo'
+    : 'Buscá algo o escribí una dirección';
+  for (const boton of [elementos.atras, elementos.adelante, elementos.recargar, elementos.inicio]) {
+    if (mirando) boton.disabled = true;
+  }
 }
 
 async function navegar() {
@@ -131,6 +186,135 @@ function conectarBotones() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Sesion compartida con el amigo
+// ---------------------------------------------------------------------------
+
+/** Pinta el estado de la conexion y el puntito de la barra. */
+function pintarEstadoSesion(estado) {
+  const { texto, tono } = ESTADOS[estado] ?? ESTADOS.desconocido;
+  elementos.estadoSesionTexto.textContent = texto;
+  elementos.estadoSesion.className = `estado-sesion ${tono}`;
+  elementos.botonSesion.classList.toggle('conectado', estado === 'connected');
+  elementos.botonSesion.classList.toggle('trabajando', estado === 'connecting' || estado === 'disconnected');
+
+  if (estado === 'connected' && sesion.papel === 'espectador') {
+    // Ya llega el video: nos salimos del panel para verlo en grande.
+    mostrarPantalla('ninguna');
+  }
+}
+
+/** Muestra u oculta el video que manda el amigo. */
+function pintarVideo(stream) {
+  elementos.videoRemoto.srcObject = stream;
+  elementos.videoRemoto.classList.toggle('visible', stream !== null);
+
+  if (stream) {
+    elementos.videoRemoto.play().catch((error) => {
+      mostrarAviso(`No se pudo reproducir el video: ${error.message}`);
+    });
+  }
+}
+
+/** Corre una accion de la sesion mostrando el error si algo sale mal. */
+async function intentar(boton, textoMientras, accion) {
+  const textoOriginal = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = textoMientras;
+  try {
+    await accion();
+  } catch (error) {
+    mostrarAviso(error.message);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
+  }
+}
+
+function abrirPanelSesion() {
+  mostrarPantalla('sesion');
+}
+
+/** Deja el panel como al principio, listo para empezar de nuevo. */
+function reiniciarPanel() {
+  elementos.elegir.hidden = false;
+  elementos.bloqueAnfitrion.hidden = true;
+  elementos.bloqueEspectador.hidden = true;
+  elementos.pasoRespuesta.hidden = true;
+  elementos.codigoInvitacion.value = '';
+  elementos.codigoRespuesta.value = '';
+  elementos.respuestaRecibida.value = '';
+  elementos.invitacionRecibida.value = '';
+}
+
+async function copiar(boton, texto) {
+  if (!texto) {
+    mostrarAviso('Todavia no hay codigo para copiar.');
+    return;
+  }
+  const copiado = await window.vexa.copiar(texto);
+  if (copiado.ok) mostrarAviso('Codigo copiado. Pasaselo a tu amigo.');
+  else mostrarAviso(copiado.motivo);
+}
+
+function conectarSesion() {
+  sesion = window.VexaConexion.crearSesion({
+    alEstado: pintarEstadoSesion,
+    alVideo: pintarVideo,
+    alAviso: mostrarAviso,
+  });
+
+  elementos.botonSesion.addEventListener('click', abrirPanelSesion);
+
+  elementos.botonInvitar.addEventListener('click', () => {
+    intentar(elementos.botonInvitar, 'Preparando…', async () => {
+      elementos.elegir.hidden = true;
+      elementos.bloqueAnfitrion.hidden = false;
+      window.vexa.modo('anfitrion');
+      const codigo = await sesion.crearInvitacion();
+      elementos.codigoInvitacion.value = codigo;
+      await copiar(elementos.botonCopiarInvitacion, codigo);
+    });
+  });
+
+  elementos.botonUnirme.addEventListener('click', () => {
+    elementos.elegir.hidden = true;
+    elementos.bloqueEspectador.hidden = false;
+    elementos.invitacionRecibida.focus();
+  });
+
+  elementos.botonResponder.addEventListener('click', () => {
+    intentar(elementos.botonResponder, 'Generando…', async () => {
+      const codigo = await sesion.responderInvitacion(elementos.invitacionRecibida.value);
+      window.vexa.modo('espectador');
+      elementos.codigoRespuesta.value = codigo;
+      elementos.pasoRespuesta.hidden = false;
+      await copiar(elementos.botonCopiarRespuesta, codigo);
+    });
+  });
+
+  elementos.botonConectar.addEventListener('click', () => {
+    intentar(elementos.botonConectar, 'Conectando…', async () => {
+      await sesion.aceptarRespuesta(elementos.respuestaRecibida.value);
+    });
+  });
+
+  elementos.botonCopiarInvitacion.addEventListener('click', () => {
+    copiar(elementos.botonCopiarInvitacion, elementos.codigoInvitacion.value);
+  });
+
+  elementos.botonCopiarRespuesta.addEventListener('click', () => {
+    copiar(elementos.botonCopiarRespuesta, elementos.codigoRespuesta.value);
+  });
+
+  elementos.botonCortar.addEventListener('click', () => {
+    sesion.cortar();
+    window.vexa.modo('solo');
+    reiniciarPanel();
+    mostrarPantalla('inicio');
+  });
+}
+
 function conectarAvisosDelPrincipal() {
   window.vexa.al('vexa:estado', pintarEstado);
 
@@ -174,6 +358,7 @@ function hayPuente() {
 
 if (hayPuente()) {
   conectarBotones();
+  conectarSesion();
   conectarAvisosDelPrincipal();
   mostrarVersion();
   refrescarEstado();

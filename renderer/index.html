@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:;">
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: mediastream:;">
   <title>Vexa</title>
   <style>
     :root {
@@ -115,7 +115,16 @@
       cursor: pointer;
     }
 
-    .insignia.visible { display: flex; }
+    .insignia.visible, .insignia.siempre { display: flex; }
+
+    .punto-sesion {
+      width: 7px; height: 7px; border-radius: 50%; flex: none;
+      background: #4a4e5b;
+    }
+
+    .insignia.conectado { border-color: var(--ok); color: var(--texto); }
+    .insignia.conectado .punto-sesion { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .insignia.trabajando .punto-sesion { background: #e8b24a; }
     .insignia:hover { border-color: var(--acento); color: var(--texto); }
     .insignia b { color: var(--acento); font-variant-numeric: tabular-nums; }
 
@@ -210,6 +219,92 @@
     button.texto.principal { background: var(--acento); border-color: var(--acento); }
     button.texto.principal:hover { background: #8b6dff; }
 
+    /* --- Panel de sesion --- */
+
+    .panel-sesion {
+      text-align: left;
+      background: var(--panel);
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .panel-sesion h2 { margin: 0 0 4px; font-size: 19px; }
+    .panel-sesion .bajada { margin: 0 0 20px; color: var(--tenue); font-size: 13px; }
+
+    .paso { margin-bottom: 18px; }
+    .paso:last-of-type { margin-bottom: 0; }
+
+    .paso h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      color: var(--tenue);
+    }
+
+    textarea {
+      width: 100%;
+      height: 88px;
+      resize: none;
+      padding: 10px 12px;
+      background: #0a0b0f;
+      border: 1px solid var(--borde);
+      border-radius: 9px;
+      color: var(--texto);
+      font: 11px/1.45 ui-monospace, Consolas, monospace;
+      word-break: break-all;
+      outline: none;
+      user-select: text;
+    }
+
+    textarea:focus { border-color: var(--acento); }
+    textarea[readonly] { color: var(--tenue); }
+
+    .fila { display: flex; gap: 10px; margin-top: 10px; }
+    .fila button { flex: 1; }
+
+    .estado-sesion {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 20px 0 0;
+      padding: 11px 13px;
+      background: #0f1116;
+      border: 1px solid var(--borde);
+      border-radius: 9px;
+      font-size: 13px;
+      color: var(--tenue);
+    }
+
+    .estado-sesion .punto {
+      width: 8px; height: 8px; border-radius: 50%; flex: none;
+      background: var(--tenue);
+    }
+
+    .estado-sesion.trabajando .punto { background: #e8b24a; }
+    .estado-sesion.ok .punto { background: var(--ok); box-shadow: 0 0 9px var(--ok); }
+    .estado-sesion.ok { color: var(--texto); }
+    .estado-sesion.error .punto { background: var(--error); }
+    .estado-sesion.error { color: var(--error); }
+
+    /* --- Video del amigo (modo espectador) --- */
+
+    #video-remoto {
+      position: fixed;
+      left: 0;
+      top: var(--alto-barra);
+      width: 100vw;
+      height: calc(100vh - var(--alto-barra));
+      background: #000;
+      object-fit: contain;
+      display: none;
+      z-index: 5;
+    }
+
+    #video-remoto.visible { display: block; }
+
     /* --- Aviso flotante --- */
 
     #aviso {
@@ -253,6 +348,10 @@
              placeholder="Buscá algo o escribí una dirección">
     </div>
 
+    <button class="insignia siempre" id="boton-sesion" type="button" title="Ver juntos con un amigo">
+      <span class="punto-sesion" id="punto-sesion"></span> Ver juntos
+    </button>
+
     <button class="insignia" id="insignia-bloqueados" type="button"
             title="Vexa bloqueó ventanas emergentes. Clic para abrir la última.">
       <b id="cuenta-bloqueados">0</b> bloqueadas
@@ -282,10 +381,69 @@
         </div>
       </div>
     </section>
+    <section class="pantalla" id="pantalla-sesion">
+      <div class="panel-sesion">
+        <h2>Ver juntos</h2>
+        <p class="bajada">Uno invita y el otro mira. El video va directo entre las dos computadoras.</p>
+
+        <div id="sesion-elegir">
+          <div class="fila">
+            <button class="texto principal" id="boton-invitar" type="button">Invitar a un amigo</button>
+            <button class="texto" id="boton-unirme" type="button">Tengo un código</button>
+          </div>
+        </div>
+
+        <div id="sesion-anfitrion" hidden>
+          <div class="paso">
+            <h3>1 · Mandale este código a tu amigo</h3>
+            <textarea id="codigo-invitacion" readonly placeholder="Generando…"></textarea>
+            <div class="fila">
+              <button class="texto" id="boton-copiar-invitacion" type="button">Copiar código</button>
+            </div>
+          </div>
+          <div class="paso">
+            <h3>2 · Pegá acá la respuesta que te mande</h3>
+            <textarea id="respuesta-recibida" placeholder="VEXA1..."></textarea>
+            <div class="fila">
+              <button class="texto principal" id="boton-conectar" type="button">Conectar</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="sesion-espectador" hidden>
+          <div class="paso">
+            <h3>1 · Pegá el código que te pasó tu amigo</h3>
+            <textarea id="invitacion-recibida" placeholder="VEXA1..."></textarea>
+            <div class="fila">
+              <button class="texto principal" id="boton-responder" type="button">Generar respuesta</button>
+            </div>
+          </div>
+          <div class="paso" id="paso-respuesta" hidden>
+            <h3>2 · Mandale esta respuesta de vuelta</h3>
+            <textarea id="codigo-respuesta" readonly></textarea>
+            <div class="fila">
+              <button class="texto" id="boton-copiar-respuesta" type="button">Copiar respuesta</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="estado-sesion" id="estado-sesion">
+          <span class="punto"></span>
+          <span id="estado-sesion-texto">Sin conexion.</span>
+        </div>
+
+        <div class="fila" style="margin-top:14px">
+          <button class="texto" id="boton-cortar" type="button">Cortar y volver</button>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <video id="video-remoto" autoplay playsinline></video>
 
   <div id="aviso" role="status"></div>
 
+  <script src="conexion.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

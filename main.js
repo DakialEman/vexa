@@ -4,10 +4,20 @@
 // La ventana tiene dos capas: la barra de navegacion (interfaz propia de Vexa)
 // y abajo el navegador interno, que es donde se ve la pagina.
 
-const { app, BrowserWindow, WebContentsView, dialog, ipcMain, nativeTheme, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  WebContentsView,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  shell,
+} = require('electron');
 const path = require('node:path');
 
 const { esNavegable, interpretarEntrada } = require('./src/navegacion.js');
+const sesion = require('./src/sesion.js');
 
 const RUTA_PRELOAD = path.join(__dirname, 'preload.js');
 const RUTA_INDEX = path.join(__dirname, 'renderer', 'index.html');
@@ -44,6 +54,10 @@ const URL_DE_HUMO = MODO_HUMO ? (process.env.VEXA_SMOKE_URL ?? '') : '';
 // Cuanto esperamos, como maximo, a que cargue la pagina de la prueba.
 const ESPERA_MAXIMA_DE_HUMO = 30_000;
 
+// Con VEXA_SMOKE_SESION=1 la prueba sigue: captura el navegador interno, arma
+// las dos puntas de la conexion y comprueba que llegue video de verdad.
+const PROBAR_SESION = MODO_HUMO && process.env.VEXA_SMOKE_SESION === '1';
+
 /** @type {BrowserWindow | null} */
 let ventana = null;
 
@@ -52,12 +66,22 @@ let vista = null;
 
 /** Estado del navegador interno que la barra necesita conocer. */
 const navegador = {
-  visible: false,
+  // Hay una pagina cargada (aunque en este momento este tapada).
+  hayPagina: false,
+  // El panel de "ver juntos" esta abierto y tapa el navegador.
+  panelAbierto: false,
+  // 'solo' navegas vos; 'anfitrion' ademas transmitis; 'espectador' solo mirás.
+  modo: 'solo',
   pantallaCompleta: false,
   ultimaUrlPedida: '',
   popupsBloqueados: 0,
   ultimoPopupBloqueado: '',
 };
+
+/** El espectador mira lo que abre el otro: no navega por su cuenta. */
+function esEspectador() {
+  return navegador.modo === 'espectador';
+}
 
 /**
  * Avisa de un error de forma explicita: siempre queda en consola, y ademas
@@ -92,32 +116,37 @@ function abrirAfuera(url) {
 // ---------------------------------------------------------------------------
 
 /** Foto del estado actual del navegador, para pintar la barra. */
+/**
+ * El navegador interno se ve solo si hay una pagina cargada, el panel de sesion
+ * esta cerrado y no estamos de espectadores (ahi se ve el video del amigo).
+ */
+function vistaDebeVerse() {
+  return navegador.hayPagina && !navegador.panelAbierto && !esEspectador();
+}
+
 function estadoActual() {
+  const base = {
+    visible: vistaDebeVerse(),
+    modo: navegador.modo,
+    panelAbierto: navegador.panelAbierto,
+    popupsBloqueados: navegador.popupsBloqueados,
+    hayPopupBloqueado: navegador.ultimoPopupBloqueado !== '',
+  };
+
   if (!vista || vista.webContents.isDestroyed()) {
-    return {
-      visible: false,
-      cargando: false,
-      url: '',
-      titulo: '',
-      puedeAtras: false,
-      puedeAdelante: false,
-      popupsBloqueados: navegador.popupsBloqueados,
-      hayPopupBloqueado: false,
-    };
+    return { ...base, visible: false, cargando: false, url: '', titulo: '', puedeAtras: false, puedeAdelante: false };
   }
 
   const contenido = vista.webContents;
   const historial = contenido.navigationHistory;
 
   return {
-    visible: navegador.visible,
+    ...base,
     cargando: contenido.isLoading(),
     url: contenido.getURL(),
     titulo: contenido.getTitle(),
     puedeAtras: historial.canGoBack(),
     puedeAdelante: historial.canGoForward(),
-    popupsBloqueados: navegador.popupsBloqueados,
-    hayPopupBloqueado: navegador.ultimoPopupBloqueado !== '',
   };
 }
 
@@ -125,10 +154,10 @@ function avisarEstado() {
   avisarBarra('vexa:estado', estadoActual());
 }
 
-/** Muestra u oculta el navegador interno (oculto = se ve la pantalla de Vexa). */
-function mostrarNavegador(visible) {
-  navegador.visible = visible;
-  if (vista) vista.setVisible(visible);
+/** Aplica la visibilidad que corresponde y le avisa a la barra. */
+function actualizarVista() {
+  if (vista && !vista.webContents.isDestroyed()) vista.setVisible(vistaDebeVerse());
+  actualizarTitulo();
   avisarEstado();
 }
 
@@ -151,7 +180,7 @@ function ubicarVista() {
 function actualizarTitulo() {
   if (!ventana || ventana.isDestroyed()) return;
   const titulo = vista && !vista.webContents.isDestroyed() ? vista.webContents.getTitle() : '';
-  ventana.setTitle(navegador.visible && titulo ? `${titulo} — Vexa` : 'Vexa');
+  ventana.setTitle(vistaDebeVerse() && titulo ? `${titulo} — Vexa` : 'Vexa');
 }
 
 /** Carga una direccion ya validada en el navegador interno. */
@@ -162,7 +191,9 @@ function irA(url) {
   }
 
   navegador.ultimaUrlPedida = url;
-  mostrarNavegador(true);
+  navegador.hayPagina = true;
+  navegador.panelAbierto = false;
+  actualizarVista();
 
   vista.webContents.loadURL(url).catch((error) => {
     // did-fail-load ya avisa del detalle; aca solo dejamos rastro en consola.
@@ -172,8 +203,8 @@ function irA(url) {
 
 /** Vuelve a la pantalla de inicio de Vexa, sin cerrar la pagina cargada. */
 function volverAlInicio() {
-  mostrarNavegador(false);
-  actualizarTitulo();
+  navegador.hayPagina = false;
+  actualizarVista();
 }
 
 function crearNavegador() {
@@ -243,18 +274,19 @@ function crearNavegador() {
     // -3 es ERR_ABORTED: la carga se cancelo sola (por ejemplo, otra navegacion).
     if (!esPrincipal || codigo === -3) return;
     console.error(`[vexa] No cargo ${urlFallida} (${codigo}: ${descripcion})`);
-    mostrarNavegador(false);
+    navegador.hayPagina = false;
+    actualizarVista();
     avisarBarra('vexa:error-de-carga', {
       url: urlFallida || navegador.ultimaUrlPedida,
       codigo,
       descripcion,
     });
-    actualizarTitulo();
   });
 
   contenido.on('render-process-gone', (_evento, detalles) => {
     console.error(`[vexa] El navegador interno se cayo: ${detalles.reason}`);
-    mostrarNavegador(false);
+    navegador.hayPagina = false;
+    actualizarVista();
     avisarBarra('vexa:error-de-carga', {
       url: navegador.ultimaUrlPedida,
       codigo: 0,
@@ -304,6 +336,10 @@ function interpretarAtajo(entrada) {
 
 function ejecutarAtajo(atajo) {
   if (!vista || vista.webContents.isDestroyed()) return;
+  if (esEspectador() && atajo !== 'foco-barra') {
+    avisarBarra('vexa:aviso', 'Estas mirando lo que abre tu amigo. Pedile el control para navegar.');
+    return;
+  }
   const historial = vista.webContents.navigationHistory;
 
   switch (atajo) {
@@ -326,6 +362,35 @@ function ejecutarAtajo(atajo) {
     default:
       console.warn(`[vexa] Atajo desconocido: ${atajo}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Captura para transmitirle al amigo
+// ---------------------------------------------------------------------------
+
+/**
+ * Cuando la barra pide capturar la pantalla, Vexa no le ofrece un menu con
+ * monitores y ventanas: le entrega directamente el navegador interno, con su
+ * audio. No se transmite el escritorio, ni las otras ventanas, ni el audio del
+ * resto de la computadora.
+ */
+function prepararCaptura() {
+  ventana.webContents.session.setDisplayMediaRequestHandler((_solicitud, responder) => {
+    if (!vista || vista.webContents.isDestroyed()) {
+      console.error('[vexa] Se pidio transmitir, pero el navegador interno no esta listo.');
+      // Un objeto vacio hace que getDisplayMedia falle, que es lo correcto aca.
+      responder({});
+      return;
+    }
+
+    console.log('[vexa] Entregando el navegador interno para transmitir.');
+    responder({
+      video: vista.webContents.mainFrame,
+      audio: vista.webContents.mainFrame,
+      // Asi vos seguis escuchando la peli mientras se la mandas a tu amigo.
+      enableLocalEcho: true,
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -358,6 +423,8 @@ function crearVentana() {
       app.quit();
     }
   });
+
+  prepararCaptura();
 
   ventana.on('resize', ubicarVista);
   ventana.on('maximize', ubicarVista);
@@ -430,8 +497,9 @@ function probarNavegador(destino) {
   contenido.once('did-finish-load', () => {
     clearTimeout(reloj);
     console.log(`[vexa] Pagina cargada: "${contenido.getTitle()}" en ${contenido.getURL()}`);
-    console.log(`[vexa] Navegador visible: ${navegador.visible}`);
-    app.quit();
+    console.log(`[vexa] Navegador visible: ${vistaDebeVerse()}`);
+    if (PROBAR_SESION) probarSesion();
+    else app.quit();
   });
 
   contenido.once('did-fail-load', (_evento, codigo, descripcion, urlFallida) => {
@@ -451,6 +519,43 @@ function probarNavegador(destino) {
   irA(resultado.url);
 }
 
+/**
+ * Prueba en vivo de la sesion compartida: corre test/prueba-sesion-en-vivo.js
+ * dentro de la ventana, que arma las dos puntas de la conexion y comprueba que
+ * llegue video. Sale con 0 si llego y con 1 si no.
+ */
+function probarSesion() {
+  const guion = path.join(__dirname, 'test', 'prueba-sesion-en-vivo.js');
+  let codigo;
+
+  try {
+    codigo = require('node:fs').readFileSync(guion, 'utf8');
+  } catch (error) {
+    console.error(`[vexa] No se encontro la prueba de sesion: ${error.message}`);
+    app.exit(1);
+    return;
+  }
+
+  console.log('[vexa] Probando la sesion compartida…');
+
+  ventana.webContents
+    .executeJavaScript(codigo, true)
+    .then((resultado) => {
+      for (const paso of resultado.pasos) console.log(`[vexa]   ${paso}`);
+      if (resultado.ok) {
+        console.log('[vexa] Sesion compartida: anduvo.');
+        app.quit();
+      } else {
+        console.error(`[vexa] Sesion compartida: fallo (${resultado.motivo}).`);
+        app.exit(1);
+      }
+    })
+    .catch((error) => {
+      console.error(`[vexa] La prueba de sesion reventó: ${error.message}`);
+      app.exit(1);
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Mensajes desde la barra de navegacion
 // ---------------------------------------------------------------------------
@@ -467,6 +572,9 @@ ipcMain.handle('vexa:info', () => ({
 ipcMain.handle('vexa:estado', () => estadoActual());
 
 ipcMain.handle('vexa:navegar', (_evento, texto) => {
+  if (esEspectador()) {
+    return { ok: false, motivo: 'Estas mirando lo que abre tu amigo. Pedile el control para navegar.' };
+  }
   const resultado = interpretarEntrada(texto);
   if (!resultado.ok) return resultado;
   irA(resultado.url);
@@ -497,6 +605,39 @@ ipcMain.on('vexa:accion', (_evento, accion) => {
     default:
       console.warn(`[vexa] Accion desconocida desde la barra: ${accion}`);
   }
+});
+
+// --- Sesion compartida ---
+
+ipcMain.handle('vexa:config-ice', () => ({ iceServers: [...sesion.SERVIDORES_ICE] }));
+
+ipcMain.handle('vexa:armar-codigo', (_evento, tipo, sdp) => sesion.armarCodigo(tipo, sdp));
+
+ipcMain.handle('vexa:leer-codigo', (_evento, texto) => sesion.leerCodigo(texto));
+
+ipcMain.handle('vexa:copiar', (_evento, texto) => {
+  if (typeof texto !== 'string' || texto === '') {
+    return { ok: false, motivo: 'No hay nada para copiar.' };
+  }
+  clipboard.writeText(texto);
+  return { ok: true };
+});
+
+/** Cambia el modo: 'solo', 'anfitrion' (transmitis) o 'espectador' (mirás). */
+ipcMain.on('vexa:modo', (_evento, modo) => {
+  if (!['solo', 'anfitrion', 'espectador'].includes(modo)) {
+    console.warn(`[vexa] Modo de sesion desconocido: ${modo}`);
+    return;
+  }
+  navegador.modo = modo;
+  console.log(`[vexa] Modo de sesion: ${modo}`);
+  actualizarVista();
+});
+
+/** Abre o cierra el panel de "ver juntos", que tapa el navegador mientras esta. */
+ipcMain.on('vexa:panel', (_evento, abierto) => {
+  navegador.panelAbierto = Boolean(abierto);
+  actualizarVista();
 });
 
 ipcMain.on('vexa:cerrar', (evento) => {
