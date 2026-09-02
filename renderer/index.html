@@ -125,6 +125,12 @@
     .insignia.conectado { border-color: var(--ok); color: var(--texto); }
     .insignia.conectado .punto-sesion { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
     .insignia.trabajando .punto-sesion { background: #e8b24a; }
+    .insignia.cedido { border-color: var(--acento); color: var(--texto); }
+    .insignia.cedido .punto-sesion { background: var(--acento); box-shadow: 0 0 8px var(--acento); }
+
+    /* Con el control tomado, el video recibe clics; si no, los deja pasar. */
+    #video-remoto { cursor: default; outline: none; }
+    #video-remoto.con-control { cursor: crosshair; }
     .insignia:hover { border-color: var(--acento); color: var(--texto); }
     .insignia b { color: var(--acento); font-variant-numeric: tabular-nums; }
 
@@ -348,6 +354,10 @@
              placeholder="Buscá algo o escribí una dirección">
     </div>
 
+    <button class="insignia" id="boton-control" type="button" title="Pasarle el control a tu amigo">
+      <span class="punto-sesion" id="punto-control"></span> <span id="texto-control">Dar control</span>
+    </button>
+
     <button class="insignia siempre" id="boton-sesion" type="button" title="Ver juntos con un amigo">
       <span class="punto-sesion" id="punto-sesion"></span> Ver juntos
     </button>
@@ -439,11 +449,12 @@
     </section>
   </main>
 
-  <video id="video-remoto" autoplay playsinline></video>
+  <video id="video-remoto" autoplay playsinline tabindex="0"></video>
 
   <div id="aviso" role="status"></div>
 
   <script src="conexion.js"></script>
+  <script src="mando.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

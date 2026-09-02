@@ -32,11 +32,15 @@ const PEDIDO_DE_CAPTURA = {
  *   alEstado: (estado: string) => void,
  *   alVideo: (stream: MediaStream | null) => void,
  *   alAviso: (texto: string) => void,
+ *   alMensaje: (mensaje: object) => void,
  * }} avisos
  */
 function crearSesion(avisos) {
   /** @type {RTCPeerConnection | null} */
   let conexion = null;
+
+  /** Canal de datos por donde viajan los mandos y los avisos de control. */
+  let canal = null;
 
   /** @type {MediaStream | null} */
   let loQueTransmito = null;
@@ -65,7 +69,46 @@ function crearSesion(avisos) {
       if (stream) avisos.alVideo(stream);
     });
 
+    // El anfitrion abre el canal; el espectador lo recibe.
+    conexion.addEventListener('datachannel', (evento) => engancharCanal(evento.channel));
+
     return conexion;
+  }
+
+  /** Deja listo el canal por donde viajan los mandos del espectador. */
+  function engancharCanal(nuevo) {
+    canal = nuevo;
+
+    canal.addEventListener('message', (evento) => {
+      let mensaje;
+      try {
+        mensaje = JSON.parse(evento.data);
+      } catch {
+        console.warn('[vexa] Llego un mensaje que no se pudo leer.');
+        return;
+      }
+      avisos.alMensaje(mensaje);
+    });
+
+    canal.addEventListener('close', () => {
+      canal = null;
+    });
+  }
+
+  /**
+   * Manda un mensaje por el canal. Devuelve false si todavia no esta abierto,
+   * asi el que llama decide si avisar o simplemente descartarlo (los
+   * movimientos del mouse se descartan sin drama).
+   */
+  function enviar(mensaje) {
+    if (!canal || canal.readyState !== 'open') return false;
+    try {
+      canal.send(JSON.stringify(mensaje));
+      return true;
+    } catch (error) {
+      console.warn(`[vexa] No se pudo mandar el mensaje: ${error.message}`);
+      return false;
+    }
   }
 
   /**
@@ -146,6 +189,9 @@ function crearSesion(avisos) {
     papel = 'anfitrion';
     const pc = await nuevaConexion();
 
+    // El canal se crea antes de la oferta para que quede descrito adentro.
+    engancharCanal(pc.createDataChannel('vexa-control'));
+
     loQueTransmito = await capturarNavegador();
     for (const pista of loQueTransmito.getTracks()) {
       const emisor = pc.addTrack(pista, loQueTransmito);
@@ -216,6 +262,11 @@ function crearSesion(avisos) {
       loQueTransmito = null;
     }
 
+    if (canal) {
+      canal.close();
+      canal = null;
+    }
+
     if (conexion) {
       conexion.close();
       conexion = null;
@@ -230,6 +281,7 @@ function crearSesion(avisos) {
     aceptarRespuesta,
     cortar,
     crearInvitacion,
+    enviar,
     responderInvitacion,
     get papel() {
       return papel;

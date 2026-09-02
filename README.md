@@ -39,6 +39,9 @@ VEXA_SMOKE=1 VEXA_SMOKE_URL=https://example.com npm start
 
 # ademas captura el navegador, conecta las dos puntas y confirma que llega video
 VEXA_SMOKE=1 VEXA_SMOKE_SESION=1 VEXA_SMOKE_URL=https://example.com npm start
+
+# comprueba que un mando del espectador llegue de verdad a la pagina
+VEXA_SMOKE=1 VEXA_SMOKE_CONTROL=1 VEXA_SMOKE_URL=https://example.com npm start
 ```
 
 Sale con codigo 0 si todo anduvo y 1 si algo fallo.
@@ -51,11 +54,13 @@ vexa/
   preload.js              puente seguro entre el proceso principal y la interfaz
   src/navegacion.js       logica de navegacion, sin interfaz (se testea sola)
   src/sesion.js           codigos de invitacion (comprimir, leer, validar)
+  src/control.js          traduccion de los mandos que manda el espectador
   test/*.test.js          tests de esa logica
   test/prueba-sesion-en-vivo.js  prueba de la conexion real, corre dentro de la app
   renderer/index.html     barra, pantallas y panel de sesion (siempre oscuros)
   renderer/app.js         logica de la interfaz
   renderer/conexion.js    conexion en vivo con el amigo (WebRTC)
+  renderer/mando.js       manda el mouse y el teclado cuando tenes el control
 ```
 
 La ventana tiene dos capas: arriba la barra de Vexa (interfaz propia) y abajo el
@@ -114,8 +119,22 @@ Puntos 1 y 2 del plan terminados.
 - Calidad apuntada a 1080p con prioridad a que sea fluido, que es lo que importa
   en una pelicula.
 
-Falta (ver `BRIEF.md` para el plan completo): el traspaso de control, el
-bloqueo de anuncios y el instalador.
+**Punto 3 (segunda mitad) — el traspaso de control:**
+
+- El anfitrion presta y recupera el control con un boton. El espectador nunca
+  lo toma por su cuenta.
+- Con el control prestado, el espectador maneja el navegador del anfitrion:
+  mouse, rueda, teclado y barra de direcciones.
+- Las posiciones viajan como proporcion de la pantalla (de 0 a 1), asi que
+  funciona aunque los dos tengan ventanas de distinto tamaño.
+- Todo lo que llega de la otra computadora se valida antes de repetirlo
+  (`src/control.js`): posiciones fuera de rango, teclas que en realidad son
+  cadenas largas, modificadores inventados y ruedas absurdas se descartan.
+- Al cortarse la conexion o cambiar de modo, el control siempre vuelve a su
+  dueño.
+
+Falta (ver `BRIEF.md` para el plan completo): el bloqueo de anuncios y el
+instalador.
 
 ## Limites conocidos
 

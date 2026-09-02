@@ -42,6 +42,8 @@ const elementos = {
   estadoSesion: document.getElementById('estado-sesion'),
   estadoSesionTexto: document.getElementById('estado-sesion-texto'),
   videoRemoto: document.getElementById('video-remoto'),
+  botonControl: document.getElementById('boton-control'),
+  textoControl: document.getElementById('texto-control'),
 };
 
 // Como se lee en pantalla cada estado de la conexion con el amigo.
@@ -68,6 +70,9 @@ let pantallaElegida = 'inicio';
 
 // La sesion compartida con el amigo (ver conexion.js).
 let sesion = null;
+
+// De anfitrion: si le prestaste el control. De espectador: si lo tenes.
+let control = false;
 
 function mostrarAviso(texto) {
   elementos.aviso.textContent = texto;
@@ -110,10 +115,11 @@ function pintarEstado(estado) {
   elementos.pantallaError.classList.toggle('visible', !tapado && pantallaElegida === 'error');
   elementos.pantallaSesion.classList.toggle('visible', !tapado && pantallaElegida === 'sesion');
 
-  // De espectador no se navega: la barra queda de solo lectura.
+  // De espectador solo se navega si te prestaron el control.
   const mirando = estado.modo === 'espectador';
-  elementos.entrada.readOnly = mirando;
-  elementos.entrada.placeholder = mirando
+  const bloqueado = mirando && !control;
+  elementos.entrada.readOnly = bloqueado;
+  elementos.entrada.placeholder = bloqueado
     ? 'Estás mirando lo que abre tu amigo'
     : 'Buscá algo o escribí una dirección';
   for (const boton of [elementos.atras, elementos.adelante, elementos.recargar, elementos.inicio]) {
@@ -121,8 +127,43 @@ function pintarEstado(estado) {
   }
 }
 
+/** Pinta el boton de control segun quien lo tiene. */
+function pintarControl({ conectado, papel }) {
+  elementos.botonControl.classList.toggle('visible', conectado);
+  elementos.botonControl.classList.toggle('cedido', control);
+  elementos.botonControl.disabled = papel !== 'anfitrion';
+
+  if (papel === 'anfitrion') {
+    elementos.textoControl.textContent = control ? 'Quitar control' : 'Dar control';
+    elementos.botonControl.title = control
+      ? 'Tu amigo esta manejando tu navegador. Clic para recuperarlo.'
+      : 'Pasarle el control de tu navegador a tu amigo.';
+  } else {
+    elementos.textoControl.textContent = control ? 'Tenés el control' : 'Mirando';
+    elementos.botonControl.title = control
+      ? 'Podes manejar el navegador de tu amigo.'
+      : 'Tu amigo tiene el control.';
+  }
+
+  elementos.videoRemoto.classList.toggle('con-control', control && papel === 'espectador');
+}
+
 async function navegar() {
   const texto = elementos.entrada.value;
+
+  // De espectador con control, la direccion se la pedimos al anfitrion.
+  if (sesion && sesion.papel === 'espectador') {
+    if (!control) {
+      mostrarAviso('Pedile el control a tu amigo para poder navegar.');
+      return;
+    }
+    if (!sesion.enviar({ tipo: 'navegar', texto })) {
+      mostrarAviso('No se pudo mandar el pedido: la conexion no esta lista.');
+    }
+    elementos.entrada.blur();
+    return;
+  }
+
   try {
     const resultado = await window.vexa.navegar(texto);
     if (!resultado.ok) {
@@ -198,6 +239,10 @@ function pintarEstadoSesion(estado) {
   elementos.botonSesion.classList.toggle('conectado', estado === 'connected');
   elementos.botonSesion.classList.toggle('trabajando', estado === 'connecting' || estado === 'disconnected');
 
+  // Al cortarse la conexion el control vuelve a su dueño, sin excepciones.
+  if (estado !== 'connected') control = false;
+  pintarControl({ conectado: estado === 'connected', papel: sesion.papel });
+
   if (estado === 'connected' && sesion.papel === 'espectador') {
     // Ya llega el video: nos salimos del panel para verlo en grande.
     mostrarPantalla('ninguna');
@@ -257,11 +302,71 @@ async function copiar(boton, texto) {
   else mostrarAviso(copiado.motivo);
 }
 
+/**
+ * Mensajes que llegan por la conexion. Vienen de la computadora del otro, asi
+ * que nada se toma como cierto sin mirarlo: cada caso valida lo suyo, y el
+ * anfitrion vuelve a validar los mandos antes de repetirlos (src/control.js).
+ */
+function recibirMensaje(mensaje) {
+  if (mensaje === null || typeof mensaje !== 'object') return;
+
+  switch (mensaje.tipo) {
+    // El anfitrion aviso que presto o recupero el control.
+    case 'control': {
+      if (sesion.papel !== 'espectador') return;
+      control = Boolean(mensaje.cedido);
+      pintarControl({ conectado: true, papel: 'espectador' });
+      mostrarAviso(control ? 'Te pasaron el control.' : 'Tu amigo recupero el control.');
+      refrescarEstado();
+      break;
+    }
+
+    // El espectador con control quiere abrir una direccion.
+    case 'navegar': {
+      if (sesion.papel !== 'anfitrion' || !control) return;
+      window.vexa.navegarRemoto(mensaje.texto);
+      break;
+    }
+
+    // Un mando de mouse o teclado del espectador.
+    case 'raton':
+    case 'tecla': {
+      if (sesion.papel !== 'anfitrion' || !control) return;
+      window.vexa.mando(mensaje);
+      break;
+    }
+
+    default:
+      console.warn(`[vexa] Mensaje desconocido por la conexion: ${String(mensaje.tipo)}`);
+  }
+}
+
 function conectarSesion() {
   sesion = window.VexaConexion.crearSesion({
     alEstado: pintarEstadoSesion,
     alVideo: pintarVideo,
     alAviso: mostrarAviso,
+    alMensaje: recibirMensaje,
+  });
+
+  // Cuando el espectador tiene el control, lo que hace sobre el video viaja.
+  window.VexaMando.conectarMando(elementos.videoRemoto, {
+    enviar: (mensaje) => sesion.enviar(mensaje),
+    tengoControl: () => control && sesion.papel === 'espectador',
+  });
+
+  elementos.botonControl.addEventListener('click', () => {
+    if (sesion.papel !== 'anfitrion') return;
+    control = !control;
+    window.vexa.cederControl(control);
+    if (!sesion.enviar({ tipo: 'control', cedido: control })) {
+      mostrarAviso('No se pudo avisarle a tu amigo: la conexion no esta lista.');
+      control = !control;
+      window.vexa.cederControl(control);
+    } else {
+      mostrarAviso(control ? 'Le pasaste el control a tu amigo.' : 'Recuperaste el control.');
+    }
+    pintarControl({ conectado: true, papel: 'anfitrion' });
   });
 
   elementos.botonSesion.addEventListener('click', abrirPanelSesion);
@@ -309,6 +414,7 @@ function conectarSesion() {
 
   elementos.botonCortar.addEventListener('click', () => {
     sesion.cortar();
+    control = false;
     window.vexa.modo('solo');
     reiniciarPanel();
     mostrarPantalla('inicio');

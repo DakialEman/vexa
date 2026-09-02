@@ -62,6 +62,15 @@ contextBridge.exposeInMainWorld('vexa', {
   /** Avisa si el panel de sesion esta tapando el navegador. */
   panel: (abierto) => ipcRenderer.send('vexa:panel', abierto),
 
+  /** El anfitrion presta o recupera el control de su navegador. */
+  cederControl: (cedido) => ipcRenderer.send('vexa:ceder-control', cedido),
+
+  /** Repite un mando que mando el espectador (mouse o teclado). */
+  mando: (mensaje) => ipcRenderer.send('vexa:mando', mensaje),
+
+  /** El espectador con control pidio abrir una direccion. */
+  navegarRemoto: (texto) => ipcRenderer.send('vexa:navegar-remoto', texto),
+
   /** Cierra la ventana desde la interfaz. */
   cerrarVentana: () => ipcRenderer.send('vexa:cerrar'),
 

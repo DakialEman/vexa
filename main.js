@@ -17,6 +17,7 @@ const {
 const path = require('node:path');
 
 const { esNavegable, interpretarEntrada } = require('./src/navegacion.js');
+const { traducirEvento } = require('./src/control.js');
 const sesion = require('./src/sesion.js');
 
 const RUTA_PRELOAD = path.join(__dirname, 'preload.js');
@@ -58,6 +59,10 @@ const ESPERA_MAXIMA_DE_HUMO = 30_000;
 // las dos puntas de la conexion y comprueba que llegue video de verdad.
 const PROBAR_SESION = MODO_HUMO && process.env.VEXA_SMOKE_SESION === '1';
 
+// Con VEXA_SMOKE_CONTROL=1 la prueba comprueba que un mando del espectador
+// llegue de verdad a la pagina: hace un clic y escribe una tecla.
+const PROBAR_CONTROL = MODO_HUMO && process.env.VEXA_SMOKE_CONTROL === '1';
+
 /** @type {BrowserWindow | null} */
 let ventana = null;
 
@@ -72,6 +77,8 @@ const navegador = {
   panelAbierto: false,
   // 'solo' navegas vos; 'anfitrion' ademas transmitis; 'espectador' solo mirás.
   modo: 'solo',
+  // El anfitrion le presto el control al espectador.
+  controlCedido: false,
   pantallaCompleta: false,
   ultimaUrlPedida: '',
   popupsBloqueados: 0,
@@ -128,6 +135,7 @@ function estadoActual() {
   const base = {
     visible: vistaDebeVerse(),
     modo: navegador.modo,
+    controlCedido: navegador.controlCedido,
     panelAbierto: navegador.panelAbierto,
     popupsBloqueados: navegador.popupsBloqueados,
     hayPopupBloqueado: navegador.ultimoPopupBloqueado !== '',
@@ -321,6 +329,34 @@ function crearNavegador() {
   ubicarVista();
 }
 
+/**
+ * Repite dentro del navegador un mando que mando el espectador.
+ * Todo lo que llega es de otra computadora: se valida antes de hacerle caso.
+ *
+ * @returns {boolean} si el mando se aplico.
+ */
+function aplicarMando(mensaje) {
+  if (navegador.modo !== 'anfitrion' || !navegador.controlCedido) {
+    // Llego un mando sin permiso. Puede ser un mensaje viejo todavia en camino.
+    return false;
+  }
+
+  if (!vista || vista.webContents.isDestroyed()) return false;
+
+  const { width, height } = vista.getBounds();
+  const traducido = traducirEvento(mensaje, { ancho: width, alto: height });
+
+  if (!traducido.ok) {
+    console.warn(`[vexa] Mando descartado: ${traducido.motivo}`);
+    return false;
+  }
+
+  for (const evento of traducido.eventos) {
+    vista.webContents.sendInputEvent(evento);
+  }
+  return true;
+}
+
 /** Traduce una tecla a una accion del navegador, o null si no es un atajo. */
 function interpretarAtajo(entrada) {
   const control = entrada.control || entrada.meta;
@@ -499,6 +535,7 @@ function probarNavegador(destino) {
     console.log(`[vexa] Pagina cargada: "${contenido.getTitle()}" en ${contenido.getURL()}`);
     console.log(`[vexa] Navegador visible: ${vistaDebeVerse()}`);
     if (PROBAR_SESION) probarSesion();
+    else if (PROBAR_CONTROL) probarControl();
     else app.quit();
   });
 
@@ -554,6 +591,60 @@ function probarSesion() {
       console.error(`[vexa] La prueba de sesion reventó: ${error.message}`);
       app.exit(1);
     });
+}
+
+/**
+ * Prueba del traspaso de control: hace de cuenta que el amigo tiene el control
+ * y manda un clic y una tecla. La pagina de prueba escribe en su titulo lo que
+ * recibe, asi se puede comprobar desde aca que llego.
+ */
+function probarControl() {
+  const contenido = vista.webContents;
+  const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
+
+  (async () => {
+    // 1. Sin permiso, un mando no tiene que hacer nada.
+    navegador.modo = 'solo';
+    navegador.controlCedido = false;
+    const sinPermiso = aplicarMando({ tipo: 'raton', accion: 'abajo', x: 0.5, y: 0.5 });
+    console.log(`[vexa]   mando sin permiso: ${sinPermiso ? 'SE APLICO (mal)' : 'rechazado'}`);
+    if (sinPermiso) throw new Error('un mando sin permiso llego a la pagina');
+
+    // 2. Con el control cedido, un clic tiene que llegar.
+    navegador.modo = 'anfitrion';
+    navegador.controlCedido = true;
+    // sendInputEvent necesita que la ventana tenga el foco del sistema.
+    ventana.focus();
+    contenido.focus();
+    await esperar(300);
+
+    aplicarMando({ tipo: 'raton', accion: 'abajo', x: 0.5, y: 0.5, boton: 'left', clics: 1 });
+    aplicarMando({ tipo: 'raton', accion: 'arriba', x: 0.5, y: 0.5, boton: 'left' });
+    await esperar(700);
+    const trasElClic = contenido.getTitle();
+    console.log(`[vexa]   despues del clic, el titulo dice: "${trasElClic}"`);
+    if (!trasElClic.includes('clic')) throw new Error('el clic no llego a la pagina');
+
+    // 3. Y una tecla tambien.
+    aplicarMando({ tipo: 'tecla', accion: 'abajo', tecla: 'k' });
+    aplicarMando({ tipo: 'tecla', accion: 'arriba', tecla: 'k' });
+    await esperar(700);
+    const trasLaTecla = contenido.getTitle();
+    console.log(`[vexa]   despues de la tecla, el titulo dice: "${trasLaTecla}"`);
+    if (!trasLaTecla.includes('tecla-k')) throw new Error('la tecla no llego a la pagina');
+
+    // 4. Al recuperar el control, los mandos vuelven a rebotar.
+    navegador.controlCedido = false;
+    const trasRecuperar = aplicarMando({ tipo: 'raton', accion: 'abajo', x: 0.5, y: 0.5 });
+    console.log(`[vexa]   mando tras recuperar el control: ${trasRecuperar ? 'SE APLICO (mal)' : 'rechazado'}`);
+    if (trasRecuperar) throw new Error('el control recuperado sigue aceptando mandos');
+
+    console.log('[vexa] Traspaso de control: anduvo.');
+    app.quit();
+  })().catch((error) => {
+    console.error(`[vexa] Traspaso de control: fallo (${error.message}).`);
+    app.exit(1);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -630,6 +721,8 @@ ipcMain.on('vexa:modo', (_evento, modo) => {
     return;
   }
   navegador.modo = modo;
+  // Al cambiar de modo el control siempre vuelve a cero.
+  navegador.controlCedido = false;
   console.log(`[vexa] Modo de sesion: ${modo}`);
   actualizarVista();
 });
@@ -638,6 +731,49 @@ ipcMain.on('vexa:modo', (_evento, modo) => {
 ipcMain.on('vexa:panel', (_evento, abierto) => {
   navegador.panelAbierto = Boolean(abierto);
   actualizarVista();
+});
+
+// --- Control del navegador desde la otra computadora ---
+
+/**
+ * Presta o recupera el control del navegador. Solo el anfitrion decide esto:
+ * el espectador no puede tomarlo por su cuenta.
+ */
+ipcMain.on('vexa:ceder-control', (_evento, cedido) => {
+  if (navegador.modo !== 'anfitrion') {
+    console.warn('[vexa] Se pidio ceder el control sin estar transmitiendo.');
+    return;
+  }
+
+  navegador.controlCedido = Boolean(cedido);
+  console.log(`[vexa] Control ${navegador.controlCedido ? 'cedido al amigo' : 'recuperado'}.`);
+
+  // Para que las teclas lleguen a la pagina, la vista tiene que tener el foco.
+  if (navegador.controlCedido && vista && !vista.webContents.isDestroyed()) {
+    vista.webContents.focus();
+  }
+
+  actualizarVista();
+});
+
+/**
+ * Repite dentro del navegador un mando que mando el espectador.
+ * Todo lo que llega es de otra computadora: se valida antes de hacerle caso.
+ */
+ipcMain.on('vexa:mando', (_evento, mensaje) => aplicarMando(mensaje));
+
+/** El espectador con control pidio abrir una direccion. */
+ipcMain.on('vexa:navegar-remoto', (_evento, texto) => {
+  if (navegador.modo !== 'anfitrion' || !navegador.controlCedido) return;
+
+  const resultado = interpretarEntrada(texto);
+  if (!resultado.ok) {
+    avisarBarra('vexa:aviso', `Tu amigo quiso navegar, pero: ${resultado.motivo}`);
+    return;
+  }
+
+  console.log(`[vexa] Tu amigo abrio: ${resultado.url}`);
+  irA(resultado.url);
 });
 
 ipcMain.on('vexa:cerrar', (evento) => {
