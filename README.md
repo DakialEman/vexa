@@ -42,9 +42,33 @@ VEXA_SMOKE=1 VEXA_SMOKE_SESION=1 VEXA_SMOKE_URL=https://example.com npm start
 
 # comprueba que un mando del espectador llegue de verdad a la pagina
 VEXA_SMOKE=1 VEXA_SMOKE_CONTROL=1 VEXA_SMOKE_URL=https://example.com npm start
+
+# comprueba que la publicidad quede afuera y lo demas entre
+VEXA_SMOKE=1 VEXA_SMOKE_ANUNCIOS=1 VEXA_SMOKE_URL=https://example.com npm start
 ```
 
 Sale con codigo 0 si todo anduvo y 1 si algo fallo.
+
+## Como se instala
+
+Para armar el instalador de Windows, desde una maquina con Windows:
+
+```bash
+npm run dist
+```
+
+Deja `dist/Vexa-0.1.0-instalador.exe`. Ese archivo se copia a las dos
+computadoras y se instala como cualquier programa: pregunta donde instalarlo y
+deja el acceso directo en el escritorio y en el menu de inicio.
+
+Para probar el empaquetado sin armar el instalador:
+
+```bash
+npm run empaquetar   # deja la app suelta en dist/
+```
+
+> El instalador de Windows hay que armarlo **en Windows**. Desde Linux
+> electron-builder necesita wine para hacerlo.
 
 ## Estructura
 
@@ -55,6 +79,8 @@ vexa/
   src/navegacion.js       logica de navegacion, sin interfaz (se testea sola)
   src/sesion.js           codigos de invitacion (comprimir, leer, validar)
   src/control.js          traduccion de los mandos que manda el espectador
+  src/anuncios.js         que pedidos se bloquean por publicidad o rastreo
+  build/generar-icono.js  dibuja build/icon.png (solo si hay que rehacerlo)
   test/*.test.js          tests de esa logica
   test/prueba-sesion-en-vivo.js  prueba de la conexion real, corre dentro de la app
   renderer/index.html     barra, pantallas y panel de sesion (siempre oscuros)
@@ -133,8 +159,20 @@ Puntos 1 y 2 del plan terminados.
 - Al cortarse la conexion o cambiar de modo, el control siempre vuelve a su
   dueño.
 
-Falta (ver `BRIEF.md` para el plan completo): el bloqueo de anuncios y el
-instalador.
+**Bloqueo de anuncios:**
+
+- Se cortan los pedidos a redes de publicidad, popunders y rastreo conocidos,
+  antes de que salgan de la maquina. La lista esta en `src/anuncios.js` y se
+  amplia agregando dominios ahi.
+- La regla es conservadora a proposito: se bloquea por dominio y nunca lo que
+  sirve la propia pagina, porque ahi vive el reproductor. Preferimos dejar
+  pasar un anuncio antes que romper una pelicula.
+- Las ventanas emergentes se siguen bloqueando aparte, con el boton para abrir
+  la ultima por si era el reproductor de verdad.
+- La barra cuenta cuantos bloqueos hubo en la pagina actual.
+
+**Empaquetado:** listo, con icono propio y instalador de Windows con pasos
+(ver "Como se instala").
 
 ## Limites conocidos
 
@@ -145,3 +183,6 @@ instalador.
   lindos. Un servidor de encuentro chiquito los reemplazaria por un link.
 - **Si el proveedor de internet usa CGNAT**, la conexion directa puede no
   armarse. Ahi haria falta un servidor de reenvio (TURN) como respaldo.
+- **El bloqueo de anuncios es una lista propia**, no un uBlock. Corta lo mas
+  comun; algun anuncio de una red que no este en la lista va a pasar. Se
+  arregla agregando el dominio en `src/anuncios.js`.

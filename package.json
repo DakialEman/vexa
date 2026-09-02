@@ -2,13 +2,60 @@
   "name": "vexa",
   "version": "0.1.0",
   "description": "Ver peliculas y series en simultaneo con un amigo",
+  "author": "DakialEman",
   "private": true,
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "empaquetar": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "^44.1.1"
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.vexa.app",
+    "productName": "Vexa",
+    "copyright": "Vexa",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Vexa-${version}-instalador.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Vexa"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo",
+      "artifactName": "Vexa-${version}.${ext}"
+    }
   }
 }

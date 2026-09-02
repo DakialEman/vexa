@@ -105,9 +105,13 @@ function pintarEstado(estado) {
     elementos.entrada.value = estado.visible ? estado.url : '';
   }
 
-  elementos.cuentaBloqueados.textContent = String(estado.popupsBloqueados);
-  elementos.insignia.classList.toggle('visible', estado.popupsBloqueados > 0);
+  const bloqueados = estado.popupsBloqueados + estado.anunciosBloqueados;
+  elementos.cuentaBloqueados.textContent = String(bloqueados);
+  elementos.insignia.classList.toggle('visible', bloqueados > 0);
   elementos.insignia.disabled = !estado.hayPopupBloqueado;
+  elementos.insignia.title = estado.hayPopupBloqueado
+    ? 'Clic para abrir la última ventana bloqueada (a veces el reproductor se abre así).'
+    : `${estado.anunciosBloqueados} anuncios y ${estado.popupsBloqueados} ventanas bloqueadas en esta página.`;
 
   // Si el navegador esta visible tapa todo; si no, se ve la pantalla elegida.
   const tapado = estado.visible;

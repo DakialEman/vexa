@@ -17,6 +17,7 @@ const {
 const path = require('node:path');
 
 const { esNavegable, interpretarEntrada } = require('./src/navegacion.js');
+const { decidir } = require('./src/anuncios.js');
 const { traducirEvento } = require('./src/control.js');
 const sesion = require('./src/sesion.js');
 
@@ -63,6 +64,10 @@ const PROBAR_SESION = MODO_HUMO && process.env.VEXA_SMOKE_SESION === '1';
 // llegue de verdad a la pagina: hace un clic y escribe una tecla.
 const PROBAR_CONTROL = MODO_HUMO && process.env.VEXA_SMOKE_CONTROL === '1';
 
+// Con VEXA_SMOKE_ANUNCIOS=1 la prueba comprueba que la publicidad quede afuera
+// y que lo que la pagina necesita siga entrando.
+const PROBAR_ANUNCIOS = MODO_HUMO && process.env.VEXA_SMOKE_ANUNCIOS === '1';
+
 /** @type {BrowserWindow | null} */
 let ventana = null;
 
@@ -82,6 +87,7 @@ const navegador = {
   pantallaCompleta: false,
   ultimaUrlPedida: '',
   popupsBloqueados: 0,
+  anunciosBloqueados: 0,
   ultimoPopupBloqueado: '',
 };
 
@@ -138,6 +144,7 @@ function estadoActual() {
     controlCedido: navegador.controlCedido,
     panelAbierto: navegador.panelAbierto,
     popupsBloqueados: navegador.popupsBloqueados,
+    anunciosBloqueados: navegador.anunciosBloqueados,
     hayPopupBloqueado: navegador.ultimoPopupBloqueado !== '',
   };
 
@@ -215,6 +222,28 @@ function volverAlInicio() {
   actualizarVista();
 }
 
+/**
+ * Corta los pedidos a redes de publicidad y rastreo antes de que salgan.
+ * La decision vive en src/anuncios.js, que se testea aparte.
+ */
+function bloquearAnuncios(sesionDelNavegador) {
+  sesionDelNavegador.webRequest.onBeforeRequest((detalles, responder) => {
+    const decision = decidir(detalles.url, detalles.referrer);
+
+    if (!decision.bloquear) {
+      responder({ cancel: false });
+      return;
+    }
+
+    navegador.anunciosBloqueados += 1;
+    responder({ cancel: true });
+
+    // La cuenta se refresca de a poco: si no, una pagina con cien anuncios
+    // manda cien mensajes seguidos a la barra sin ningun motivo.
+    if (navegador.anunciosBloqueados % 5 === 1) avisarEstado();
+  });
+}
+
 function crearNavegador() {
   vista = new WebContentsView({
     webPreferences: {
@@ -232,6 +261,8 @@ function crearNavegador() {
 
   const contenido = vista.webContents;
   contenido.setUserAgent(AGENTE_DE_USUARIO);
+
+  bloquearAnuncios(contenido.session);
 
   // Los sitios no pueden pedir camara, microfono, ubicacion ni notificaciones.
   contenido.session.setPermissionRequestHandler((_contenido, permiso, responder) => {
@@ -270,7 +301,13 @@ function crearNavegador() {
 
   contenido.on('did-start-loading', avisarEstado);
   contenido.on('did-stop-loading', avisarEstado);
-  contenido.on('did-navigate', avisarEstado);
+  contenido.on('did-navigate', () => {
+    // Cada pagina lleva su propia cuenta de bloqueos.
+    navegador.anunciosBloqueados = 0;
+    navegador.popupsBloqueados = 0;
+    navegador.ultimoPopupBloqueado = '';
+    avisarEstado();
+  });
   contenido.on('did-navigate-in-page', avisarEstado);
 
   contenido.on('page-title-updated', () => {
@@ -536,6 +573,7 @@ function probarNavegador(destino) {
     console.log(`[vexa] Navegador visible: ${vistaDebeVerse()}`);
     if (PROBAR_SESION) probarSesion();
     else if (PROBAR_CONTROL) probarControl();
+    else if (PROBAR_ANUNCIOS) probarAnuncios();
     else app.quit();
   });
 
@@ -645,6 +683,42 @@ function probarControl() {
     console.error(`[vexa] Traspaso de control: fallo (${error.message}).`);
     app.exit(1);
   });
+}
+
+/**
+ * Prueba del bloqueo: la pagina de prueba pide un recurso propio y varios de
+ * redes de publicidad, y anota cuales le llegaron.
+ */
+function probarAnuncios() {
+  const contenido = vista.webContents;
+
+  setTimeout(() => {
+    contenido
+      .executeJavaScript('JSON.stringify(window.__resultado || {})')
+      .then((crudo) => {
+        const resultado = JSON.parse(crudo);
+        console.log(`[vexa]   la pagina recibio: ${JSON.stringify(resultado.llegaron)}`);
+        console.log(`[vexa]   la pagina no recibio: ${JSON.stringify(resultado.faltaron)}`);
+        console.log(`[vexa]   anuncios bloqueados: ${navegador.anunciosBloqueados}`);
+
+        const faltaron = resultado.faltaron ?? [];
+        const llegaron = resultado.llegaron ?? [];
+
+        if (!llegaron.includes('propio')) {
+          throw new Error('se bloqueo un recurso de la propia pagina');
+        }
+        for (const anuncio of ['popads', 'doubleclick', 'taboola']) {
+          if (!faltaron.includes(anuncio)) throw new Error(`no se bloqueo ${anuncio}`);
+        }
+
+        console.log('[vexa] Bloqueo de anuncios: anduvo.');
+        app.quit();
+      })
+      .catch((error) => {
+        console.error(`[vexa] Bloqueo de anuncios: fallo (${error.message}).`);
+        app.exit(1);
+      });
+  }, 3000);
 }
 
 // ---------------------------------------------------------------------------
