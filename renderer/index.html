@@ -3,9 +3,141 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline';">
   <title>Vexa</title>
+  <style>
+    :root {
+      --fondo: #0b0c0f;
+      --panel: #14161c;
+      --borde: #23262f;
+      --texto: #e7e9ef;
+      --tenue: #8b90a1;
+      --acento: #7c5cff;
+      --ok: #46d19b;
+      --error: #ff6b6b;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      background: var(--fondo);
+      color: var(--texto);
+      font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      user-select: none;
+    }
+
+    main {
+      width: 100%;
+      max-width: 520px;
+      background: var(--panel);
+      border: 1px solid var(--borde);
+      border-radius: 14px;
+      padding: 36px 34px 30px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 40px;
+      letter-spacing: -1px;
+      background: linear-gradient(100deg, var(--texto), var(--acento));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .lema {
+      margin: 6px 0 26px;
+      color: var(--tenue);
+      font-size: 14px;
+    }
+
+    .estado {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--borde);
+      border-radius: 10px;
+      background: #0f1116;
+    }
+
+    .punto {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--tenue);
+      flex: none;
+    }
+
+    .estado.ok .punto { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .estado.error .punto { background: var(--error); box-shadow: 0 0 10px var(--error); }
+    .estado.error { color: var(--error); }
+
+    dl {
+      margin: 22px 0 28px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 9px 18px;
+      font-size: 13px;
+    }
+
+    dt { color: var(--tenue); }
+
+    dd {
+      margin: 0;
+      text-align: right;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      user-select: text;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--borde);
+      border-radius: 10px;
+      background: #1b1e26;
+      color: var(--texto);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+
+    button:hover { background: #232733; border-color: #333846; }
+    button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+    button:active { background: #171a21; }
+  </style>
 </head>
 <body>
-  <h1>Vexa</h1>
+  <main>
+    <h1>Vexa</h1>
+    <p class="lema">Ver peliculas y series en simultaneo con un amigo.</p>
+
+    <div class="estado" id="estado">
+      <span class="punto"></span>
+      <span id="estado-texto">Iniciando…</span>
+    </div>
+
+    <dl>
+      <dt>Version</dt>      <dd id="dato-version">—</dd>
+      <dt>Electron</dt>     <dd id="dato-electron">—</dd>
+      <dt>Chromium</dt>     <dd id="dato-chromium">—</dd>
+      <dt>Node</dt>         <dd id="dato-node">—</dd>
+      <dt>Plataforma</dt>   <dd id="dato-plataforma">—</dd>
+    </dl>
+
+    <button type="button" id="boton-cerrar">Cerrar Vexa</button>
+  </main>
+
+  <script src="app.js"></script>
 </body>
 </html>
