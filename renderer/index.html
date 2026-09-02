@@ -4,18 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline';">
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:;">
   <title>Vexa</title>
   <style>
     :root {
       --fondo: #0b0c0f;
+      --barra: #101218;
       --panel: #14161c;
       --borde: #23262f;
+      --borde-vivo: #333846;
       --texto: #e7e9ef;
       --tenue: #8b90a1;
       --acento: #7c5cff;
       --ok: #46d19b;
       --error: #ff6b6b;
+      /* Tiene que coincidir con ALTO_BARRA en main.js */
+      --alto-barra: 56px;
     }
 
     * { box-sizing: border-box; }
@@ -26,117 +30,261 @@
       margin: 0;
       background: var(--fondo);
       color: var(--texto);
-      font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+      font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 32px;
+      flex-direction: column;
+      overflow: hidden;
       user-select: none;
     }
 
-    main {
-      width: 100%;
-      max-width: 520px;
-      background: var(--panel);
-      border: 1px solid var(--borde);
-      border-radius: 14px;
-      padding: 36px 34px 30px;
+    /* --- Barra de navegacion --- */
+
+    header {
+      height: var(--alto-barra);
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      background: var(--barra);
+      border-bottom: 1px solid var(--borde);
     }
+
+    .icono {
+      width: 34px;
+      height: 34px;
+      flex: none;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--texto);
+      cursor: pointer;
+      transition: background .12s, color .12s;
+    }
+
+    .icono:hover:not(:disabled) { background: #1c1f28; }
+    .icono:active:not(:disabled) { background: #262a35; }
+    .icono:disabled { color: #4a4e5b; cursor: default; }
+    .icono svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .barra-url {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 12px;
+      margin: 0 4px;
+      background: #0a0b0f;
+      border: 1px solid var(--borde);
+      border-radius: 9px;
+      transition: border-color .12s;
+    }
+
+    .barra-url:focus-within { border-color: var(--acento); }
+
+    .barra-url .lupa { width: 15px; height: 15px; flex: none; color: var(--tenue); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+    #entrada {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: var(--texto);
+      font: inherit;
+      outline: none;
+      user-select: text;
+    }
+
+    #entrada::placeholder { color: #5f6474; }
+
+    .insignia {
+      flex: none;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      height: 30px;
+      padding: 0 11px;
+      border: 1px solid var(--borde);
+      border-radius: 8px;
+      background: #16121f;
+      color: var(--tenue);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .insignia.visible { display: flex; }
+    .insignia:hover { border-color: var(--acento); color: var(--texto); }
+    .insignia b { color: var(--acento); font-variant-numeric: tabular-nums; }
+
+    /* --- Zona de contenido (queda debajo del navegador cuando hay pagina) --- */
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      overflow: auto;
+    }
+
+    .pantalla { display: none; width: 100%; max-width: 560px; text-align: center; }
+    .pantalla.visible { display: block; }
 
     h1 {
       margin: 0;
-      font-size: 40px;
-      letter-spacing: -1px;
+      font-size: 46px;
+      letter-spacing: -1.5px;
       background: linear-gradient(100deg, var(--texto), var(--acento));
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
     }
 
-    .lema {
-      margin: 6px 0 26px;
-      color: var(--tenue);
-      font-size: 14px;
-    }
+    .lema { margin: 8px 0 30px; color: var(--tenue); }
 
-    .estado {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      padding: 12px 14px;
-      border: 1px solid var(--borde);
-      border-radius: 10px;
-      background: #0f1116;
-    }
-
-    .punto {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--tenue);
-      flex: none;
-    }
-
-    .estado.ok .punto { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
-    .estado.error .punto { background: var(--error); box-shadow: 0 0 10px var(--error); }
-    .estado.error { color: var(--error); }
-
-    dl {
-      margin: 22px 0 28px;
+    .ayuda {
       display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 9px 18px;
+      gap: 10px;
+      text-align: left;
+      background: var(--panel);
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      padding: 20px 22px;
+      color: var(--tenue);
       font-size: 13px;
     }
 
-    dt { color: var(--tenue); }
+    .ayuda b { color: var(--texto); font-weight: 600; }
 
-    dd {
-      margin: 0;
-      text-align: right;
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    kbd {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--borde-vivo);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      background: #1a1d25;
+      color: var(--texto);
+      font: 11px/1.6 ui-monospace, Consolas, monospace;
+    }
+
+    .cartel-error {
+      background: var(--panel);
+      border: 1px solid #3a2530;
+      border-radius: 12px;
+      padding: 26px 24px;
+    }
+
+    .cartel-error h2 { margin: 0 0 8px; font-size: 18px; color: var(--error); }
+    .cartel-error p { margin: 0 0 6px; color: var(--tenue); }
+
+    .cartel-error .direccion {
+      margin: 14px 0 20px;
+      padding: 9px 12px;
+      background: #0a0b0f;
+      border: 1px solid var(--borde);
+      border-radius: 8px;
+      font: 12px/1.5 ui-monospace, Consolas, monospace;
+      color: var(--tenue);
+      word-break: break-all;
       user-select: text;
     }
 
-    button {
-      width: 100%;
-      padding: 12px;
+    .botones { display: flex; gap: 10px; justify-content: center; }
+
+    button.texto {
+      padding: 10px 18px;
       border: 1px solid var(--borde);
-      border-radius: 10px;
+      border-radius: 9px;
       background: #1b1e26;
       color: var(--texto);
       font: inherit;
       font-weight: 600;
       cursor: pointer;
-      transition: background .15s, border-color .15s;
+      transition: background .12s, border-color .12s;
     }
 
-    button:hover { background: #232733; border-color: #333846; }
-    button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
-    button:active { background: #171a21; }
+    button.texto:hover { background: #232733; border-color: var(--borde-vivo); }
+    button.texto.principal { background: var(--acento); border-color: var(--acento); }
+    button.texto.principal:hover { background: #8b6dff; }
+
+    /* --- Aviso flotante --- */
+
+    #aviso {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 20px);
+      max-width: 80vw;
+      padding: 11px 18px;
+      background: #1b1e26;
+      border: 1px solid var(--borde-vivo);
+      border-radius: 10px;
+      color: var(--texto);
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s, transform .18s;
+    }
+
+    #aviso.visible { opacity: 1; transform: translate(-50%, 0); }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Vexa</h1>
-    <p class="lema">Ver peliculas y series en simultaneo con un amigo.</p>
+  <header>
+    <button class="icono" id="boton-atras" type="button" title="Atras (Alt+←)" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="icono" id="boton-adelante" type="button" title="Adelante (Alt+→)" disabled>
+      <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+    <button class="icono" id="boton-recargar" type="button" title="Recargar (F5)">
+      <svg viewBox="0 0 24 24" id="icono-recargar"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
+    </button>
+    <button class="icono" id="boton-inicio" type="button" title="Inicio de Vexa">
+      <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+    </button>
 
-    <div class="estado" id="estado">
-      <span class="punto"></span>
-      <span id="estado-texto">Iniciando…</span>
+    <div class="barra-url">
+      <svg class="lupa" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="entrada" type="text" spellcheck="false" autocomplete="off"
+             placeholder="Buscá algo o escribí una dirección">
     </div>
 
-    <dl>
-      <dt>Version</dt>      <dd id="dato-version">—</dd>
-      <dt>Electron</dt>     <dd id="dato-electron">—</dd>
-      <dt>Chromium</dt>     <dd id="dato-chromium">—</dd>
-      <dt>Node</dt>         <dd id="dato-node">—</dd>
-      <dt>Plataforma</dt>   <dd id="dato-plataforma">—</dd>
-    </dl>
+    <button class="insignia" id="insignia-bloqueados" type="button"
+            title="Vexa bloqueó ventanas emergentes. Clic para abrir la última.">
+      <b id="cuenta-bloqueados">0</b> bloqueadas
+    </button>
+  </header>
 
-    <button type="button" id="boton-cerrar">Cerrar Vexa</button>
+  <main>
+    <section class="pantalla visible" id="pantalla-inicio">
+      <h1>Vexa</h1>
+      <p class="lema">Ver películas y series en simultáneo con un amigo.</p>
+      <div class="ayuda">
+        <div><b>Escribí arriba</b> una dirección (pelispedia.com) o lo que quieras buscar.</div>
+        <div><b>Los pop-ups se bloquean solos.</b> Si el reproductor abría uno de verdad, tocá el botón de la derecha para abrirlo.</div>
+        <div><b>Atajos:</b> <kbd>Ctrl</kbd>+<kbd>L</kbd> barra · <kbd>Alt</kbd>+<kbd>←</kbd> atrás · <kbd>F5</kbd> recargar · <kbd>Esc</kbd> detener</div>
+        <div id="linea-version" class="lema" style="margin:2px 0 0"></div>
+      </div>
+    </section>
+
+    <section class="pantalla" id="pantalla-error">
+      <div class="cartel-error">
+        <h2>No se pudo abrir la página</h2>
+        <p id="error-detalle">Revisá la dirección o tu conexión a internet.</p>
+        <div class="direccion" id="error-url"></div>
+        <div class="botones">
+          <button class="texto principal" id="boton-reintentar" type="button">Reintentar</button>
+          <button class="texto" id="boton-volver" type="button">Volver al inicio</button>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <div id="aviso" role="status"></div>
 
   <script src="app.js"></script>
 </body>

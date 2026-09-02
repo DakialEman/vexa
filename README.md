@@ -19,36 +19,77 @@ npm install
 npm start
 ```
 
-Para verificar sin manos que la app arranca y cierra bien:
+## Como se prueba
 
 ```bash
-VEXA_SMOKE=1 npm start
+npm test
 ```
 
-Abre la ventana, imprime `[vexa] Ventana lista.` y sale con codigo 0.
+Corre los tests de la logica de navegacion, sin abrir ninguna ventana.
+
+Para probar la app entera sin tocar nada:
+
+```bash
+# solo abre y cierra la ventana
+VEXA_SMOKE=1 npm start
+
+# ademas navega y confirma que la pagina cargo
+VEXA_SMOKE=1 VEXA_SMOKE_URL=https://example.com npm start
+```
+
+Sale con codigo 0 si todo anduvo y 1 si algo fallo.
 
 ## Estructura
 
 ```
 vexa/
-  main.js              proceso principal: ventana, ciclo de vida, errores
-  preload.js           puente seguro entre el proceso principal y la interfaz
-  renderer/index.html  interfaz (siempre oscura)
-  renderer/app.js      logica de la interfaz
+  main.js                 proceso principal: ventana, navegador interno, errores
+  preload.js              puente seguro entre el proceso principal y la interfaz
+  src/navegacion.js       logica de navegacion, sin interfaz (se testea sola)
+  test/navegacion.test.js tests de esa logica
+  renderer/index.html     barra de navegacion y pantallas de Vexa (siempre oscuras)
+  renderer/app.js         logica de la interfaz
 ```
+
+La ventana tiene dos capas: arriba la barra de Vexa (interfaz propia) y abajo el
+navegador interno, que es una vista aparte donde se ve la pagina. Cuando no hay
+pagina abierta o cuando falla una carga, esa vista se esconde y queda a la vista
+la pantalla de inicio o el cartel de error.
+
+## Atajos
+
+| Atajo | Que hace |
+| --- | --- |
+| `Ctrl` + `L` | Ir a la barra de direcciones |
+| `Alt` + `←` / `→` | Atras / adelante |
+| `F5` o `Ctrl` + `R` | Recargar |
+| `Esc` | Detener la carga |
 
 ## Estado
 
-Punto 1 del plan terminado: **la ventana abre y cierra bien.**
+Puntos 1 y 2 del plan terminados.
 
-Hecho:
+**Punto 1 — la ventana abre y cierra bien:**
 
-- Ventana de 1100x720 en modo oscuro, sin flash blanco al abrir.
+- Ventana en modo oscuro, sin flash blanco al abrir.
 - Una sola instancia a la vez (si abris Vexa de nuevo, enfoca la que ya esta).
 - Aislamiento activado (`contextIsolation`, `sandbox`, sin Node en la interfaz).
 - Los errores no se tragan: fallo de carga, proceso caido y excepciones sueltas
   se avisan por consola y en pantalla, y la app sale con codigo 1.
-- Los links externos abren en el navegador del sistema, no dentro de Vexa.
 
-Falta (ver `BRIEF.md` para el plan completo): el navegador interno, la conexion
-con el amigo, el traspaso de control y el instalador.
+**Punto 2 — el navegador interno:**
+
+- Barra con atras, adelante, recargar/detener, inicio y direccion.
+- Escribis una direccion y la abre; escribis cualquier otra cosa y la busca.
+- Solo abre paginas web: `file:`, `javascript:` y demas quedan bloqueados.
+- Las ventanas emergentes se bloquean (en los sitios de peliculas son publicidad)
+  y se cuentan en la barra. Si el reproductor de verdad abria una, hay un boton
+  para abrir la ultima bloqueada.
+- Los sitios no pueden pedir camara, microfono ni ubicacion. Pantalla completa si,
+  que es lo que necesita un reproductor.
+- Las descargas se cancelan: Vexa mira peliculas, no baja archivos.
+- Cookies y sesiones persisten entre aperturas, como en un navegador normal.
+- Si una pagina no carga, aparece un cartel con el motivo y un boton de reintentar.
+
+Falta (ver `BRIEF.md` para el plan completo): la conexion con el amigo, el
+traspaso de control, el bloqueo de anuncios y el instalador.
