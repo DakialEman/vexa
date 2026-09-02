@@ -1,0 +1,9 @@
+{
+  "name": "vexa",
+  "version": "0.1.0",
+  "description": "quiero ver peliculas y series con mi amigo simultaneamente",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}

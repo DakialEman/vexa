@@ -1,0 +1,9 @@
+# Solo
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+node_modules/
+dist/
+out/
