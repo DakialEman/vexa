@@ -30,6 +30,18 @@ ser el mismo en las dos computadoras.
 ## Como se prueba
 
 ```bash
+test/probar-todo.sh
+```
+
+Corre todo: la logica, la app abriendo y cerrando, la pantalla con sus
+botones, el bloqueo de anuncios, y **dos Vexa de verdad conectandose por el
+servidor**, con traspaso de control incluido. Al final resume que anduvo y que
+no. Las pruebas que necesitan un servidor local se saltean solas si no esta,
+avisando.
+
+Para correr solo la logica, sin abrir ninguna ventana:
+
+```bash
 npm test
 ```
 

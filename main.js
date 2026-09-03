@@ -76,6 +76,10 @@ const PROBAR_ANUNCIOS = MODO_HUMO && process.env.VEXA_SMOKE_ANUNCIOS === '1';
 // errores de cableado que las otras pruebas no ven.
 const PROBAR_PANEL = MODO_HUMO && process.env.VEXA_SMOKE_PANEL === '1';
 
+// Con VEXA_SMOKE_CAIDA=1 se comprueba que, si la conexion se muere, el que
+// miraba vuelva a tener un Vexa usable.
+const PROBAR_CAIDA = MODO_HUMO && process.env.VEXA_SMOKE_CAIDA === '1';
+
 // Con VEXA_SMOKE_ROL se prueba de a dos Vexa de verdad: una abre la sala
 // ('anfitrion') y la otra entra con el codigo ('espectador'). Es lo mas
 // parecido a dos amigos en dos computadoras que se puede hacer en una sola.
@@ -595,12 +599,18 @@ function crearVentana() {
       return;
     }
 
+    if (PROBAR_CAIDA) {
+      correrPruebaEnLaVentana('prueba-caida.js', 'Caida de la conexion');
+      return;
+    }
+
     // El espectador no abre ninguna pagina: mira la del otro. Asi que su
     // prueba arranca aca y no despues de navegar.
     if (ROL_DE_PRUEBA !== '' && URL_DE_HUMO === '') {
       correrPruebaEnLaVentana('prueba-de-a-dos.js', `Vexa como ${ROL_DE_PRUEBA}`, {
         rol: ROL_DE_PRUEBA,
         codigo: process.env.VEXA_SMOKE_CODIGO ?? '',
+        otraPagina: process.env.VEXA_SMOKE_URL2 ?? '',
       });
       return;
     }
@@ -714,6 +724,7 @@ function probarNavegador(destino) {
       correrPruebaEnLaVentana('prueba-de-a-dos.js', `Vexa como ${ROL_DE_PRUEBA}`, {
         rol: ROL_DE_PRUEBA,
         codigo: process.env.VEXA_SMOKE_CODIGO ?? '',
+        otraPagina: process.env.VEXA_SMOKE_URL2 ?? '',
       });
     } else app.quit();
   });

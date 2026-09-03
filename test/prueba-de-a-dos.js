@@ -14,11 +14,12 @@
   };
   const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
 
-  const { rol, codigo } = window.__vexaPrueba ?? {};
+  const { rol, codigo, otraPagina } = window.__vexaPrueba ?? {};
   let sesion = null;
   let estadoActual = 'new';
   let videoRecibido = null;
   let meDieronControl = false;
+  let paginaQueMiro = '';
 
   try {
     const ajustes = await window.vexa.ajustes();
@@ -35,6 +36,11 @@
       alVideo: (stream) => { videoRecibido = stream; },
       alAviso: (texto) => anotar('aviso', texto),
       alMensaje: (mensaje) => {
+        if (mensaje?.tipo === 'pagina') {
+          paginaQueMiro = mensaje.url ?? '';
+          anotar('me contaron que pagina miro', paginaQueMiro);
+          return;
+        }
         if (mensaje?.tipo === 'control') {
           meDieronControl = Boolean(mensaje.cedido);
           anotar('me avisaron del control', String(meDieronControl));
@@ -60,6 +66,11 @@
       anotar('conectados', 'el espectador entro solo, con el codigo');
       window.vexa.modo('anfitrion');
       await esperar(1500);
+
+      // Contarle que pagina estamos mirando (en la app lo hace pintarEstado).
+      const mia = await window.vexa.estado();
+      sesion.enviar({ tipo: 'pagina', url: mia.url, titulo: mia.titulo });
+      anotar('le conte que pagina miro', mia.url);
 
       // --- Traspaso de control ---
       const antes = (await window.vexa.estado()).titulo;
@@ -90,6 +101,29 @@
         throw new Error(`siguen llegando mandos despues de recuperar el control ("${alFinal}")`);
       }
       anotar('tras recuperar el control', 'los mandos ya no se aplican');
+
+      // --- Cambiar de pagina en el medio de la sesion ---
+      // La captura esta atada al navegador interno; si al navegar se cortara,
+      // el espectador se quedaria mirando una imagen congelada.
+      if (otraPagina) {
+        const antesDeNavegar = (await window.vexa.estado()).url;
+        const fue = await window.vexa.navegar(otraPagina);
+        if (!fue.ok) throw new Error(`no se pudo navegar: ${fue.motivo}`);
+
+        let ahora = antesDeNavegar;
+        for (let i = 0; i < 30 && ahora === antesDeNavegar; i += 1) {
+          await esperar(400);
+          ahora = (await window.vexa.estado()).url;
+        }
+        if (ahora === antesDeNavegar) throw new Error('el anfitrion no llego a cambiar de pagina');
+        anotar('cambie de pagina', `${antesDeNavegar} -> ${ahora}`);
+
+        const info = await window.vexa.estado();
+        sesion.enviar({ tipo: 'pagina', url: info.url, titulo: info.titulo });
+
+        // Le damos tiempo al espectador para comprobar que sigue viendo.
+        await esperar(8000);
+      }
 
       return { ok: true, pasos };
     }
@@ -122,6 +156,10 @@
       if (cuadros === 0) throw new Error('llego el video pero no se reprodujo ningun cuadro');
       anotar('video reproduciendose', `${cuadros} cuadros`);
 
+      // El anfitrion tiene que habernos contado que esta mirando.
+      for (let i = 0; i < 20 && paginaQueMiro === ''; i += 1) await esperar(500);
+      if (paginaQueMiro === '') throw new Error('nunca me contaron que pagina esta mirando');
+
       // --- Esperamos a que nos den el control y probamos manejar ---
       for (let i = 0; i < 40 && !meDieronControl; i += 1) await esperar(500);
       if (!meDieronControl) throw new Error('nunca me dieron el control');
@@ -138,6 +176,32 @@
       for (let i = 0; i < 20 && meDieronControl; i += 1) await esperar(500);
       if (meDieronControl) throw new Error('nunca me avisaron que me sacaban el control');
       anotar('me sacaron el control', 'y me avisaron');
+
+      // --- El anfitrion cambia de pagina: tengo que seguir viendo ---
+      if (otraPagina) {
+        const primera = paginaQueMiro;
+        for (let i = 0; i < 40 && paginaQueMiro === primera; i += 1) await esperar(400);
+        if (paginaQueMiro === primera) throw new Error('nunca me avisaron del cambio de pagina');
+        anotar('el anfitrion cambio de pagina', paginaQueMiro);
+
+        // Y lo que importa: que el video siga llegando, no congelado.
+        const mirador = document.createElement('video');
+        mirador.srcObject = videoRecibido;
+        mirador.muted = true;
+        await mirador.play().catch(() => {});
+        await esperar(1500);
+        const antes = mirador.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+        await esperar(2500);
+        const despues = mirador.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+        mirador.pause();
+        mirador.srcObject = null;
+
+        anotar('cuadros despues del cambio', `${antes} -> ${despues}`);
+        if (despues <= antes) {
+          throw new Error('el video se congelo cuando el anfitrion cambio de pagina');
+        }
+        anotar('el video sigue llegando', 'la captura sobrevivio al cambio de pagina');
+      }
 
       return { ok: true, pasos };
     }

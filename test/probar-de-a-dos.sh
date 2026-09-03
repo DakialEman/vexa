@@ -9,6 +9,7 @@ set -u
 
 SERVIDOR="${1:-http://127.0.0.1:8790}"
 PAGINA="${2:-http://127.0.0.1:8124/peli}"
+OTRA_PAGINA="${3:-http://127.0.0.1:8130/}"
 TRABAJO="$(mktemp -d)"
 trap 'rm -rf "$TRABAJO"' EXIT
 
@@ -24,7 +25,7 @@ fi
 # --- El anfitrion abre la sala y queda esperando ---
 echo "--- levantando el anfitrion ---"
 VEXA_VARIAS=1 VEXA_SMOKE=1 VEXA_SMOKE_ROL=anfitrion \
-  VEXA_SERVIDOR="$SERVIDOR" VEXA_SMOKE_URL="$PAGINA" \
+  VEXA_SERVIDOR="$SERVIDOR" VEXA_SMOKE_URL="$PAGINA" VEXA_SMOKE_URL2="$OTRA_PAGINA" \
   xvfb-run -a npx electron . --no-sandbox --user-data-dir="$TRABAJO/anfitrion" \
   > "$TRABAJO/anfitrion.log" 2>&1 &
 PID_ANFITRION=$!
@@ -53,8 +54,8 @@ COMO_LO_ESCRIBE="$(echo "${CODIGO:0:3}-${CODIGO:3}" | tr 'A-Z' 'a-z')"
 echo "--- el espectador entra escribiendo \"$COMO_LO_ESCRIBE\" ---"
 
 VEXA_VARIAS=1 VEXA_SMOKE=1 VEXA_SMOKE_ROL=espectador VEXA_SMOKE_CODIGO="$COMO_LO_ESCRIBE" \
-  VEXA_SERVIDOR="$SERVIDOR" \
-  timeout 180 xvfb-run -a npx electron . --no-sandbox --user-data-dir="$TRABAJO/espectador" \
+  VEXA_SERVIDOR="$SERVIDOR" VEXA_SMOKE_URL2="$OTRA_PAGINA" \
+  timeout 240 xvfb-run -a npx electron . --no-sandbox --user-data-dir="$TRABAJO/espectador" \
   > "$TRABAJO/espectador.log" 2>&1
 SALIDA_ESPECTADOR=$?
 

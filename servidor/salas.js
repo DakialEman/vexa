@@ -41,6 +41,20 @@ const PEDIDOS_POR_MINUTO = 120;
 const ERRORES_POR_MINUTO = 20;
 
 /**
+ * Tope por conexion fisica, sin mirar X-Forwarded-For.
+ *
+ * Esa cabecera se puede falsear: alguien podria inventar una IP distinta en
+ * cada pedido para escaparle al freno de arriba. Este segundo tope, mas
+ * holgado, no se puede esquivar asi, porque cuenta de donde llega el paquete
+ * de verdad. Va alto para no molestar a un hosting que meta a mucha gente
+ * detras del mismo proxy.
+ */
+const PEDIDOS_POR_MINUTO_POR_CONEXION = 1200;
+
+/** Un pedido que no termina de llegar en este tiempo se corta. */
+const ESPERA_DE_PEDIDO = 20_000;
+
+/**
  * Crea el servidor.
  *
  * @param {{ahora?: () => number}} opciones Inyectable para poder testear el vencimiento.
@@ -54,6 +68,9 @@ function crearServidor(opciones = {}) {
   /** @type {Map<string, {pedidos: number, errores: number, desde: number}>} */
   const visitas = new Map();
 
+  /** Lo mismo pero por conexion fisica, que no se puede falsear. */
+  const conexiones = new Map();
+
   function barrer() {
     const limite = ahora() - VIDA_DE_LA_SALA;
     for (const [codigo, sala] of salas) {
@@ -62,13 +79,29 @@ function crearServidor(opciones = {}) {
     for (const [ip, visita] of visitas) {
       if (visita.desde < ahora() - 60_000) visitas.delete(ip);
     }
+    for (const [ip, visita] of conexiones) {
+      if (visita.desde < ahora() - 60_000) conexiones.delete(ip);
+    }
   }
 
   /**
    * Lleva la cuenta de pedidos por IP.
    * @returns {{permitido: boolean, motivo?: string}}
    */
-  function controlarRitmo(ip, fueError) {
+  function controlarRitmo(ip, fueError, ipDeLaConexion) {
+    // Primero el tope que no se puede esquivar falseando cabeceras.
+    if (ipDeLaConexion) {
+      let porConexion = conexiones.get(ipDeLaConexion);
+      if (!porConexion || porConexion.desde < ahora() - 60_000) {
+        porConexion = { pedidos: 0, errores: 0, desde: ahora() };
+        conexiones.set(ipDeLaConexion, porConexion);
+      }
+      porConexion.pedidos += 1;
+      if (porConexion.pedidos > PEDIDOS_POR_MINUTO_POR_CONEXION) {
+        return { permitido: false, motivo: 'Demasiados pedidos. Espera un minuto.' };
+      }
+    }
+
     let visita = visitas.get(ip);
     if (!visita || visita.desde < ahora() - 60_000) {
       visita = { pedidos: 0, errores: 0, desde: ahora() };
@@ -187,6 +220,7 @@ function crearServidor(opciones = {}) {
 
   const servidor = http.createServer(async (req, res) => {
     const ip = deQuienViene(req);
+    const ipFisica = req.socket.remoteAddress ?? 'desconocida';
     const url = new URL(req.url, 'http://vexa');
     const partes = url.pathname.split('/').filter(Boolean);
 
@@ -204,7 +238,7 @@ function crearServidor(opciones = {}) {
       try {
         cuerpo = await leerCuerpo(req);
       } catch (error) {
-        controlarRitmo(ip, true);
+        controlarRitmo(ip, true, ipFisica);
         // Ojo: no mirar req.destroyed. Node destruye el stream del pedido apenas
         // termina de leerlo, asi que eso siempre da verdadero y nos dejaria sin
         // contestar. Lo que importa es si la respuesta todavia se puede escribir.
@@ -215,7 +249,7 @@ function crearServidor(opciones = {}) {
 
     // --- Crear sala: POST /salas ---
     if (req.method === 'POST' && partes.length === 1) {
-      const ritmo = controlarRitmo(ip, false);
+      const ritmo = controlarRitmo(ip, false, ipFisica);
       if (!ritmo.permitido) return responder(res, 429, { motivo: ritmo.motivo });
 
       if (!pareceConexion(cuerpo.oferta)) {
@@ -256,7 +290,7 @@ function crearServidor(opciones = {}) {
 
     // --- Entrar a la sala: GET /salas/CODIGO ---
     if (req.method === 'GET' && partes.length === 2) {
-      const ritmo = controlarRitmo(ip, sala === undefined);
+      const ritmo = controlarRitmo(ip, sala === undefined, ipFisica);
       if (!ritmo.permitido) return responder(res, 429, { motivo: ritmo.motivo });
       if (!sala) return responder(res, 404, { motivo: 'No hay ninguna sala con ese codigo.' });
       if (sala.respuesta !== null) {
@@ -267,7 +301,7 @@ function crearServidor(opciones = {}) {
 
     // --- Contestar: POST /salas/CODIGO/respuesta ---
     if (req.method === 'POST' && partes.length === 3 && partes[2] === 'respuesta') {
-      const ritmo = controlarRitmo(ip, sala === undefined);
+      const ritmo = controlarRitmo(ip, sala === undefined, ipFisica);
       if (!ritmo.permitido) return responder(res, 429, { motivo: ritmo.motivo });
       if (!sala) return responder(res, 404, { motivo: 'Esa sala ya no existe.' });
       if (sala.respuesta !== null) {
@@ -282,7 +316,7 @@ function crearServidor(opciones = {}) {
 
     // --- El anfitrion espera la respuesta: GET /salas/CODIGO/respuesta ---
     if (req.method === 'GET' && partes.length === 3 && partes[2] === 'respuesta') {
-      const ritmo = controlarRitmo(ip, false);
+      const ritmo = controlarRitmo(ip, false, ipFisica);
       if (!ritmo.permitido) return responder(res, 429, { motivo: ritmo.motivo });
       if (!sala) return responder(res, 404, { motivo: 'Esa sala ya no existe.' });
       if (sala.respuesta === null) return responder(res, 200, { esperando: true });
@@ -301,6 +335,11 @@ function crearServidor(opciones = {}) {
     return responder(res, 404, { motivo: 'No existe.' });
   });
 
+  // Que una conexion lenta o a medio mandar no se quede colgada para siempre.
+  servidor.requestTimeout = ESPERA_DE_PEDIDO;
+  servidor.headersTimeout = ESPERA_DE_PEDIDO;
+  servidor.keepAliveTimeout = 30_000;
+
   const reloj = setInterval(barrer, BARRIDO);
   // Que el barrido no impida que el proceso termine cuando corresponde.
   if (typeof reloj.unref === 'function') reloj.unref();
@@ -316,6 +355,8 @@ function crearServidor(opciones = {}) {
 
 module.exports = {
   CUERPO_MAXIMO,
+  ESPERA_DE_PEDIDO,
+  PEDIDOS_POR_MINUTO_POR_CONEXION,
   SALAS_MAXIMAS,
   ERRORES_POR_MINUTO,
   PEDIDOS_POR_MINUTO,

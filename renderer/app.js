@@ -113,6 +113,12 @@ let sesion = null;
 // De anfitrion: si le prestaste el control. De espectador: si lo tenes.
 let control = false;
 
+// De espectador: que pagina esta mirando el anfitrion, para poder mostrarsela.
+let paginaDelAmigo = { url: '', titulo: '' };
+
+// De anfitrion: lo ultimo que le contamos al espectador, para no repetirnos.
+let ultimaPaginaAvisada = '';
+
 function mostrarAviso(texto) {
   elementos.aviso.textContent = texto;
   elementos.aviso.classList.add('visible');
@@ -141,7 +147,17 @@ function pintarEstado(estado) {
   elementos.recargar.title = estado.cargando ? 'Detener (Esc)' : 'Recargar (F5)';
 
   if (!editandoBarra) {
-    elementos.entrada.value = estado.visible ? estado.url : '';
+    // El espectador no tiene navegador propio: en su barra va la pagina que
+    // esta mirando, asi sabe donde esta parado.
+    if (estado.modo === 'espectador') elementos.entrada.value = paginaDelAmigo.url;
+    else elementos.entrada.value = estado.visible ? estado.url : '';
+  }
+
+  // El anfitrion le cuenta al espectador que pagina abrio.
+  if (estado.modo === 'anfitrion' && sesion && estado.url !== ultimaPaginaAvisada) {
+    if (sesion.enviar({ tipo: 'pagina', url: estado.url, titulo: estado.titulo })) {
+      ultimaPaginaAvisada = estado.url;
+    }
   }
 
   const bloqueados = estado.popupsBloqueados + estado.anunciosBloqueados;
@@ -289,6 +305,18 @@ function pintarEstadoSesion(estado) {
     if (sesion.papel === 'espectador') mostrarPantalla('ninguna');
     else if (pantallaElegida === 'sesion') mostrarPantalla('inicio');
   }
+
+  // Si la conexion se murio de verdad, el que miraba no puede quedarse con un
+  // video congelado y sin navegador: lo devolvemos a un Vexa usable.
+  if (estado === 'failed') {
+    window.vexa.modo('solo');
+    control = false;
+    paginaDelAmigo = { url: '', titulo: '' };
+    ultimaPaginaAvisada = '';
+    pintarVideo(null);
+    reiniciarPanel();
+    mostrarPantalla('sesion');
+  }
 }
 
 /** Muestra u oculta el video que manda el amigo. */
@@ -382,6 +410,18 @@ function recibirMensaje(mensaje) {
       break;
     }
 
+    // El anfitrion conto que pagina esta mirando.
+    case 'pagina': {
+      if (sesion.papel !== 'espectador') return;
+      // Viene de la otra computadora: lo tratamos como texto y nada mas.
+      paginaDelAmigo = {
+        url: typeof mensaje.url === 'string' ? mensaje.url.slice(0, 2000) : '',
+        titulo: typeof mensaje.titulo === 'string' ? mensaje.titulo.slice(0, 300) : '',
+      };
+      if (!editandoBarra) elementos.entrada.value = paginaDelAmigo.url;
+      break;
+    }
+
     // El espectador con control quiere abrir una direccion.
     case 'navegar': {
       if (sesion.papel !== 'anfitrion' || !control) return;
@@ -409,6 +449,10 @@ function conectarSesion() {
     alAviso: mostrarAviso,
     alMensaje: recibirMensaje,
   });
+
+  // Gancho para las pruebas: permite simular estados de la conexion sin
+  // necesitar una segunda computadora. No hace nada en el uso normal.
+  window.__vexaSesionDePrueba = { simularEstado: (estado) => pintarEstadoSesion(estado) };
 
   // Cuando el espectador tiene el control, lo que hace sobre el video viaja.
   window.VexaMando.conectarMando(elementos.videoRemoto, {
@@ -488,6 +532,8 @@ function conectarSesion() {
   elementos.botonCortar.addEventListener('click', () => {
     sesion.cortar();
     control = false;
+    paginaDelAmigo = { url: '', titulo: '' };
+    ultimaPaginaAvisada = '';
     window.vexa.modo('solo');
     reiniciarPanel();
     mostrarPantalla('inicio');

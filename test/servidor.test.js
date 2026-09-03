@@ -320,3 +320,38 @@ test('una oferta mas grande de lo razonable se rechaza', async () => {
     await cerrar();
   }
 });
+
+test('falsear X-Forwarded-For no alcanza para esquivar el freno', async () => {
+  const { servidor, cerrar } = await levantar();
+  try {
+    const base = `http://127.0.0.1:${servidor.address().port}`;
+    const { PEDIDOS_POR_MINUTO_POR_CONEXION } = require('../servidor/salas.js');
+
+    // Una IP distinta en cada pedido escapa al freno por usuario...
+    let frenado = false;
+    const intentos = PEDIDOS_POR_MINUTO_POR_CONEXION + 60;
+    for (let i = 0; i < intentos && !frenado; i += 1) {
+      const r = await fetch(`${base}/salas/ZZZZZZ`, {
+        headers: { 'X-Forwarded-For': `1.2.3.${i % 255}` },
+      });
+      if (r.status === 429) frenado = true;
+    }
+
+    // ...pero el tope por conexion fisica lo termina frenando igual.
+    assert.equal(frenado, true, 'el tope por conexion tendria que haberlo frenado');
+  } finally {
+    await cerrar();
+  }
+});
+
+test('el servidor tiene tiempos limite, para que nadie lo deje colgado', async () => {
+  const { servidor, cerrar } = await levantar();
+  try {
+    const { ESPERA_DE_PEDIDO } = require('../servidor/salas.js');
+    assert.equal(servidor.requestTimeout, ESPERA_DE_PEDIDO);
+    assert.equal(servidor.headersTimeout, ESPERA_DE_PEDIDO);
+    assert.ok(servidor.keepAliveTimeout > 0);
+  } finally {
+    await cerrar();
+  }
+});
