@@ -10,10 +10,27 @@
 set -u
 cd "$(dirname "$0")/.."
 
-SERVIDOR="${VEXA_SERVIDOR_PRUEBA:-http://127.0.0.1:8790}"
-PAGINA="${VEXA_PAGINA_PRUEBA:-http://127.0.0.1:8124/peli}"
-PAGINA2="${VEXA_PAGINA2_PRUEBA:-http://127.0.0.1:8130/}"
-PAGINA_ANUNCIOS="${VEXA_PAGINA_ANUNCIOS:-http://127.0.0.1:8125/peli}"
+SERVIDOR="http://127.0.0.1:8790"
+PAGINA="http://127.0.0.1:8124/peli"
+PAGINA2="http://127.0.0.1:8130/"
+PAGINA_ANUNCIOS="http://127.0.0.1:8125/peli"
+PAGINA_YOUTUBE="http://127.0.0.1:8150/watch"
+PAGINA_YOUTUBE_SIN_BOTON="http://127.0.0.1:8150/sinboton"
+
+# Las paginas de prueba y el servidor de encuentro los levantamos nosotros,
+# asi esto se corre sin preparar nada. Si ya hay algo escuchando, se usa.
+PROPIOS=0
+if ! curl -s -m 2 -o /dev/null "$SERVIDOR/salud" 2>/dev/null; then
+  node test/servidores-de-prueba.js > /dev/null 2>&1 &
+  PID_SERVIDORES=$!
+  PROPIOS=1
+  sleep 2
+fi
+
+apagar_servidores() {
+  [ "$PROPIOS" -eq 1 ] && kill "$PID_SERVIDORES" 2>/dev/null
+}
+trap apagar_servidores EXIT
 
 BIEN=0
 MAL=0
@@ -96,6 +113,16 @@ if hay "$PAGINA_ANUNCIOS"; then
 else
   echo "(sin pagina con anuncios: salteo el bloqueo)"; echo
   anotar salteada "bloqueo de anuncios"
+fi
+
+if hay "$PAGINA_YOUTUBE"; then
+  en_la_app "8b. Saltear un anuncio de YouTube" \
+    VEXA_SMOKE_YOUTUBE=omitido VEXA_SMOKE_URL="$PAGINA_YOUTUBE"
+  en_la_app "8c. Adelantar un anuncio que no se puede omitir" \
+    VEXA_SMOKE_YOUTUBE=adelantado VEXA_SMOKE_URL="$PAGINA_YOUTUBE_SIN_BOTON"
+else
+  echo "(sin el reproductor de prueba: salteo los anuncios de YouTube)"; echo
+  anotar salteada "anuncios de YouTube"
 fi
 
 if hay "$SERVIDOR/salud" && hay "$PAGINA"; then

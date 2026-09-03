@@ -75,6 +75,10 @@ const PROBAR_CONTROL = MODO_HUMO && process.env.VEXA_SMOKE_CONTROL === '1';
 // y que lo que la pagina necesita siga entrando.
 const PROBAR_ANUNCIOS = MODO_HUMO && process.env.VEXA_SMOKE_ANUNCIOS === '1';
 
+// Con VEXA_SMOKE_YOUTUBE se comprueba que el salteador de anuncios de YouTube
+// haga lo suyo. El valor dice que se espera que pase: 'omitido' o 'adelantado'.
+const PROBAR_YOUTUBE = MODO_HUMO ? (process.env.VEXA_SMOKE_YOUTUBE ?? '') : '';
+
 // Con VEXA_SMOKE_PANEL=1 se aprietan los botones de la pantalla, para cazar
 // errores de cableado que las otras pruebas no ven.
 const PROBAR_PANEL = MODO_HUMO && process.env.VEXA_SMOKE_PANEL === '1';
@@ -742,6 +746,7 @@ function probarNavegador(destino) {
     if (PROBAR_SESION) probarSesion();
     else if (PROBAR_CONTROL) probarControl();
     else if (PROBAR_ANUNCIOS) probarAnuncios();
+    else if (PROBAR_YOUTUBE !== '') probarYoutube(PROBAR_YOUTUBE);
     else if (ROL_DE_PRUEBA !== '') {
       correrPruebaEnLaVentana('prueba-de-a-dos.js', `Vexa como ${ROL_DE_PRUEBA}`, {
         rol: ROL_DE_PRUEBA,
@@ -930,6 +935,53 @@ function probarAnuncios() {
         app.exit(1);
       });
   }, 3000);
+}
+
+/**
+ * Prueba del salteador de anuncios de YouTube.
+ *
+ * La pagina de prueba imita lo justo de YouTube (el reproductor con la clase
+ * que marca "hay un anuncio", el video y el boton de omitir) y escribe en su
+ * titulo lo que le hicieron. Asi se comprueba el camino entero: que Vexa
+ * reconozca la direccion como YouTube, inyecte el guion, y que el guion haga
+ * lo que tiene que hacer.
+ *
+ * @param {string} seEspera 'omitido' o 'adelantado'.
+ */
+function probarYoutube(seEspera) {
+  const contenido = vista.webContents;
+
+  (async () => {
+    const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
+
+    // La pagina de prueba no puede llamarse youtube.com: Chromium tiene esa
+    // direccion en su lista de sitios que solo acepta por https, asi que no
+    // se la puede suplantar en local. Inyectamos el guion a mano, con la
+    // misma funcion que usa la app, y damos por probada aparte la decision de
+    // "esto es YouTube" (que tiene sus propios tests en test/anuncios.test.js).
+    inyectarEnUnMarco(contenido.mainFrame);
+
+    let titulo = '';
+    for (let intento = 0; intento < 20 && titulo !== seEspera; intento += 1) {
+      await esperar(400);
+      titulo = await contenido.executeJavaScript('document.title');
+    }
+
+    console.log(`[vexa]   la pagina dice: "${titulo}" (se esperaba "${seEspera}")`);
+    if (titulo !== seEspera) throw new Error(`el anuncio no se ${seEspera}`);
+
+    // Y el reproductor tiene que haber quedado sin la marca de anuncio.
+    const sigueElAnuncio = await contenido.executeJavaScript(
+      "document.querySelector('.html5-video-player').classList.contains('ad-showing')",
+    );
+    if (sigueElAnuncio) throw new Error('el anuncio sigue puesto');
+
+    console.log('[vexa] Salteador de YouTube: anduvo.');
+    app.quit();
+  })().catch((error) => {
+    console.error(`[vexa] Salteador de YouTube: fallo (${error.message}).`);
+    app.exit(1);
+  });
 }
 
 // ---------------------------------------------------------------------------
