@@ -79,6 +79,10 @@ const PROBAR_ANUNCIOS = MODO_HUMO && process.env.VEXA_SMOKE_ANUNCIOS === '1';
 // haga lo suyo. El valor dice que se espera que pase: 'omitido' o 'adelantado'.
 const PROBAR_YOUTUBE = MODO_HUMO ? (process.env.VEXA_SMOKE_YOUTUBE ?? '') : '';
 
+// Con VEXA_SMOKE_FOTOS=<carpeta> se le sacan fotos a la interfaz. Sirve para
+// mirar como quedo sin tener que abrirla a mano.
+const CARPETA_DE_FOTOS = MODO_HUMO ? (process.env.VEXA_SMOKE_FOTOS ?? '') : '';
+
 // Con VEXA_SMOKE_PANEL=1 se aprietan los botones de la pantalla, para cazar
 // errores de cableado que las otras pruebas no ven.
 const PROBAR_PANEL = MODO_HUMO && process.env.VEXA_SMOKE_PANEL === '1';
@@ -620,6 +624,11 @@ function crearVentana() {
   ventana.once('ready-to-show', () => {
     ventana.show();
     console.log(`[vexa] Ventana lista en ${Date.now() - ARRANQUE} ms.`);
+    if (CARPETA_DE_FOTOS !== '') {
+      sacarFotos(CARPETA_DE_FOTOS);
+      return;
+    }
+
     if (PROBAR_PANEL) {
       correrPruebaEnLaVentana('prueba-panel.js', 'Pantalla');
       return;
@@ -718,7 +727,8 @@ function crearVentana() {
     .then(() => {
       crearNavegador();
       avisarEstado();
-      if (URL_DE_HUMO !== '') probarNavegador(URL_DE_HUMO);
+      // En modo fotos la pagina la abre sacarFotos, no esta prueba.
+      if (URL_DE_HUMO !== '' && CARPETA_DE_FOTOS === '') probarNavegador(URL_DE_HUMO);
     })
     .catch((error) => {
       reportarError('No se pudo cargar la interfaz', `${RUTA_INDEX}\n\n${error.message}`);
@@ -980,6 +990,69 @@ function probarYoutube(seEspera) {
     app.quit();
   })().catch((error) => {
     console.error(`[vexa] Salteador de YouTube: fallo (${error.message}).`);
+    app.exit(1);
+  });
+}
+
+/**
+ * Le saca fotos a la interfaz, para poder mirarla sin abrirla a mano.
+ * Cada foto es la ventana de Vexa: la barra y la pantalla que este puesta.
+ */
+function sacarFotos(carpeta) {
+  const fs = require('node:fs');
+
+  const esperar = (ms) => new Promise((listo) => setTimeout(listo, ms));
+
+  const foto = async (nombre) => {
+    await esperar(700);
+    const imagen = await ventana.webContents.capturePage();
+    const destino = path.join(carpeta, `${nombre}.png`);
+    fs.writeFileSync(destino, imagen.toPNG());
+    console.log(`[vexa] foto: ${destino}`);
+  };
+
+  const enLaPantalla = (codigo) => ventana.webContents.executeJavaScript(codigo, true);
+
+  (async () => {
+    fs.mkdirSync(carpeta, { recursive: true });
+
+    await foto('1-inicio');
+
+    await enLaPantalla("document.getElementById('boton-sesion').click()");
+    await foto('2-ver-juntos');
+
+    await enLaPantalla("document.getElementById('boton-ajustes').click()");
+    await foto('3-ajustes');
+
+    await enLaPantalla("document.getElementById('boton-entrar').click()");
+    await foto('4-entrar-con-codigo');
+
+    // Y lo mismo en ingles, para ver que el idioma cambia todo.
+    await enLaPantalla("(() => { const s = document.getElementById('selector-idioma');"
+      + " s.value = 'en'; s.dispatchEvent(new Event('change')); })()");
+    await esperar(1200);
+    await foto('5-en-ingles');
+
+    // Volvemos al castellano para no dejar la configuracion cambiada.
+    await enLaPantalla("(() => { const s = document.getElementById('selector-idioma');"
+      + " s.value = 'es'; s.dispatchEvent(new Event('change')); })()");
+    await esperar(1000);
+
+    // Y una del navegador interno con una pagina abierta, que es la otra
+    // mitad de la app. Va aparte porque es una capa nativa, no HTML nuestro.
+    if (process.env.VEXA_SMOKE_URL) {
+      irA(process.env.VEXA_SMOKE_URL);
+      await esperar(2500);
+      const dePagina = await vista.webContents.capturePage();
+      const destino = path.join(carpeta, '6-navegador.png');
+      fs.writeFileSync(destino, dePagina.toPNG());
+      console.log(`[vexa] foto: ${destino}`);
+    }
+
+    console.log('[vexa] Fotos: listas.');
+    app.quit();
+  })().catch((error) => {
+    console.error(`[vexa] Fotos: fallo (${error.message}).`);
     app.exit(1);
   });
 }
