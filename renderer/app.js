@@ -40,6 +40,7 @@ const elementos = {
   bloqueAjustes: document.getElementById('bloque-ajustes'),
   campoServidor: document.getElementById('campo-servidor'),
   botonGuardarAjustes: document.getElementById('boton-guardar-ajustes'),
+  botonProbarServidor: document.getElementById('boton-probar-servidor'),
   estadoSesion: document.getElementById('estado-sesion'),
   estadoSesionTexto: document.getElementById('estado-sesion-texto'),
   videoRemoto: document.getElementById('video-remoto'),
@@ -236,6 +237,12 @@ function conectarBotones() {
 // Sesion compartida con el amigo
 // ---------------------------------------------------------------------------
 
+/** Escribe un texto en la linea de estado del panel, sin depender de WebRTC. */
+function decirEstado(texto, tono) {
+  elementos.estadoSesionTexto.textContent = texto;
+  elementos.estadoSesion.className = `estado-sesion ${tono ?? 'neutro'}`;
+}
+
 /** Pinta el estado de la conexion y el puntito de la barra. */
 function pintarEstadoSesion(estado) {
   const { texto, tono } = ESTADOS[estado] ?? ESTADOS.desconocido;
@@ -389,17 +396,29 @@ function conectarSesion() {
 
       elementos.elegir.hidden = true;
       elementos.bloqueAnfitrion.hidden = false;
+      elementos.codigoSala.textContent = '·····';
       window.vexa.modo('anfitrion');
+
+      // En los planes gratuitos el servidor se duerme y despertarlo tarda.
+      // Mejor decirlo que dejar al usuario mirando puntitos.
+      decirEstado('Hablando con el servidor… si estaba dormido puede tardar un minuto.', 'trabajando');
+      elementos.notaEspera.textContent = 'Esto puede tardar hasta un minuto la primera vez del dia.';
 
       try {
         const codigo = await sesion.abrirSala(elementos.codigoPropio.value);
         elementos.codigoSala.textContent = comoSeLee(codigo);
+        elementos.notaEspera.textContent = 'Esperando a que entre… podés seguir navegando mientras tanto.';
+        decirEstado('Sala abierta. Pasale el código a tu amigo.', 'ok');
         await copiar(comoSeLee(codigo));
       } catch (error) {
         // Si no se pudo abrir, volvemos atras en vez de dejar el panel a medias.
         elementos.elegir.hidden = false;
         elementos.bloqueAnfitrion.hidden = true;
+        elementos.codigoSala.textContent = '·····';
         window.vexa.modo('solo');
+        // El aviso flotante se va solo a los pocos segundos; en la linea de
+        // estado el motivo queda, que es donde uno lo va a buscar.
+        decirEstado(error.message, 'error');
         throw error;
       }
     });
@@ -415,8 +434,17 @@ function conectarSesion() {
   elementos.botonConectar.addEventListener('click', () => {
     intentar(elementos.botonConectar, 'Entrando…', async () => {
       if (!(await hayServidor())) return;
-      await sesion.entrarASala(elementos.codigoParaEntrar.value);
-      window.vexa.modo('espectador');
+
+      decirEstado('Buscando la sala… si el servidor dormia puede tardar un minuto.', 'trabajando');
+
+      try {
+        await sesion.entrarASala(elementos.codigoParaEntrar.value);
+        window.vexa.modo('espectador');
+        decirEstado('Entraste. Esperando el video…', 'trabajando');
+      } catch (error) {
+        decirEstado(error.message, 'error');
+        throw error;
+      }
     });
   });
 
@@ -439,6 +467,25 @@ function conectarSesion() {
   // --- Ajustes ---
   elementos.botonAjustes.addEventListener('click', () => {
     abrirAjustes(elementos.bloqueAjustes.hidden);
+  });
+
+  elementos.botonProbarServidor.addEventListener('click', () => {
+    intentar(elementos.botonProbarServidor, 'Probando…', async () => {
+      const direccion = elementos.campoServidor.value.trim();
+      if (direccion === '') {
+        mostrarAviso('Escribi primero la direccion del servidor.');
+        return;
+      }
+
+      decirEstado('Probando el servidor… puede tardar un minuto si estaba dormido.', 'trabajando');
+      const prueba = await window.vexa.probarServidor(direccion);
+
+      if (prueba.ok) {
+        decirEstado(`El servidor anda. Contesto en ${(prueba.demora / 1000).toFixed(1)} segundos.`, 'ok');
+      } else {
+        decirEstado(prueba.motivo, 'error');
+      }
+    });
   });
 
   elementos.botonGuardarAjustes.addEventListener('click', () => {

@@ -894,6 +894,10 @@ ipcMain.handle('vexa:guardar-ajustes', (_evento, nuevos) => {
   return { ok: true, servidor: ajustes.servidor };
 });
 
+/** Comprueba que el servidor este vivo (y lo despierta si estaba dormido). */
+ipcMain.handle('vexa:probar-servidor', (_evento, direccion) =>
+  sesion.probarServidor(direccion || ajustes.servidor));
+
 /** Crea la sala en el servidor y devuelve el codigo para pasarle al amigo. */
 ipcMain.handle('vexa:crear-sala', (_evento, oferta, codigoPedido) =>
   sesion.crearSala(ajustes.servidor, oferta, codigoPedido));

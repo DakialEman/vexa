@@ -50,7 +50,13 @@
       throw new Error('el bloque de ajustes no se abrio');
     }
 
-    // 5. Entrar con un codigo.
+    // 5. El boton de probar el servidor tiene que estar.
+    if (!document.getElementById('boton-probar-servidor')) {
+      throw new Error('falta el boton de probar el servidor');
+    }
+    anotar('boton Probar servidor', seVe('boton-probar-servidor'));
+
+    // 6. Entrar con un codigo.
     document.getElementById('boton-entrar').click();
     anotar('despues de tocar Entrar', seVe('sesion-espectador'));
     if (document.getElementById('sesion-espectador').hidden) {

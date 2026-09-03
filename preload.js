@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('vexa', {
   ajustes: () => ipcRenderer.invoke('vexa:ajustes'),
   guardarAjustes: (nuevos) => ipcRenderer.invoke('vexa:guardar-ajustes', nuevos),
 
+  /** Comprueba que el servidor este vivo, y lo despierta si dormia. */
+  probarServidor: (direccion) => ipcRenderer.invoke('vexa:probar-servidor', direccion),
+
   /** Abre una sala y devuelve el codigo corto para pasarle al amigo. */
   crearSala: (oferta, codigoPedido) => ipcRenderer.invoke('vexa:crear-sala', oferta, codigoPedido),
 

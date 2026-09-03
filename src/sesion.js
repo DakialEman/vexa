@@ -21,8 +21,15 @@ const SERVIDORES_ICE = Object.freeze([
   { urls: 'stun:stun.cloudflare.com:3478' },
 ]);
 
-/** Cuanto esperamos al servidor antes de darlo por caido. */
-const ESPERA = 10_000;
+/**
+ * Cuanto esperamos al servidor antes de darlo por caido.
+ *
+ * Generoso a proposito: en los planes gratuitos (Render y parecidos) la
+ * instancia se apaga sola cuando nadie la usa, y el primer pedido tiene que
+ * esperar a que arranque de nuevo. Eso tarda entre 30 y 60 segundos. Con un
+ * limite corto, el primer intento del dia siempre falla.
+ */
+const ESPERA = 75_000;
 
 /** Un SDP de verdad siempre arranca declarando la version. */
 const PARECE_SDP = /(^|\n)v=0(\r?\n|$)/;
@@ -49,7 +56,10 @@ async function pedir(servidor, camino, opciones = {}) {
     });
   } catch (error) {
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      return { ok: false, motivo: 'El servidor de Vexa no contesta. Fijate si esta bien la direccion.' };
+      return {
+        ok: false,
+        motivo: 'El servidor de Vexa no contesto en 75 segundos. Fijate si la direccion esta bien.',
+      };
     }
     return { ok: false, motivo: `No se pudo hablar con el servidor: ${error.message}` };
   }
@@ -66,6 +76,22 @@ async function pedir(servidor, camino, opciones = {}) {
   }
 
   return { ok: true, datos };
+}
+
+/**
+ * Le pregunta al servidor si esta vivo. Sirve para dos cosas: comprobar que la
+ * direccion sea correcta, y despertarlo antes de abrir una sala.
+ */
+async function probarServidor(servidor) {
+  const desde = Date.now();
+  const respuesta = await pedir(servidor, '/salud');
+  if (!respuesta.ok) return respuesta;
+
+  if (respuesta.datos.ok !== true) {
+    return { ok: false, motivo: 'Esa direccion contesta, pero no parece un servidor de Vexa.' };
+  }
+
+  return { ok: true, demora: Date.now() - desde };
 }
 
 /**
@@ -183,4 +209,5 @@ module.exports = {
   crearSala,
   describirEstado,
   mirarRespuesta,
+  probarServidor,
 };
