@@ -10,7 +10,8 @@
     "test": "node --test \"test/*.test.js\"",
     "empaquetar": "electron-builder --dir",
     "dist": "electron-builder --win",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "servidor": "node servidor/index.js"
   },
   "devDependencies": {
     "electron": "^44.1.1",

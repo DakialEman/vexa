@@ -17,12 +17,14 @@ const {
 const path = require('node:path');
 
 const { esNavegable, interpretarEntrada } = require('./src/navegacion.js');
-const { decidir } = require('./src/anuncios.js');
+const { decidir, esYoutube } = require('./src/anuncios.js');
+const config = require('./src/config.js');
 const { traducirEvento } = require('./src/control.js');
 const sesion = require('./src/sesion.js');
 
 const RUTA_PRELOAD = path.join(__dirname, 'preload.js');
 const RUTA_INDEX = path.join(__dirname, 'renderer', 'index.html');
+const RUTA_SALTA_ANUNCIOS = path.join(__dirname, 'src', 'saltar-anuncios-youtube.js');
 
 // Color de fondo de la ventana nativa. Va igual al del CSS para que no haya
 // un flash blanco entre que abre la ventana y termina de pintar el HTML.
@@ -73,6 +75,28 @@ let ventana = null;
 
 /** @type {WebContentsView | null} */
 let vista = null;
+
+/** Configuracion del usuario, leida al arrancar. */
+let ajustes = { servidor: '', aviso: '' };
+
+/** Donde vive el archivo de configuracion. */
+function rutaDeConfig() {
+  return path.join(app.getPath('userData'), 'config.json');
+}
+
+/** Guion que saltea los anuncios de YouTube, leido una sola vez. */
+let guionAnuncios = null;
+
+function leerGuionDeAnuncios() {
+  if (guionAnuncios !== null) return guionAnuncios;
+  try {
+    guionAnuncios = require('node:fs').readFileSync(RUTA_SALTA_ANUNCIOS, 'utf8');
+  } catch (error) {
+    console.error(`[vexa] No se pudo leer el salteador de anuncios: ${error.message}`);
+    guionAnuncios = '';
+  }
+  return guionAnuncios;
+}
 
 /** Estado del navegador interno que la barra necesita conocer. */
 const navegador = {
@@ -223,6 +247,28 @@ function volverAlInicio() {
 }
 
 /**
+ * Mete el salteador de anuncios en cada marco de YouTube que haya en la pagina
+ * (la pestaña principal, y tambien los reproductores incrustados en otros
+ * sitios). El guion se cuida solo de no instalarse dos veces.
+ */
+function inyectarSalteadorDeAnuncios(contenido) {
+  const guion = leerGuionDeAnuncios();
+  if (guion === '') return;
+
+  const principal = contenido.mainFrame;
+  if (!principal) return;
+
+  for (const marco of [principal, ...principal.framesInSubtree]) {
+    if (!esYoutube(marco.url)) continue;
+
+    marco.executeJavaScript(guion, true).catch((error) => {
+      // Que un marco no acepte el guion no es motivo para romper nada.
+      console.warn(`[vexa] No se pudo saltear anuncios en ${marco.url}: ${error.message}`);
+    });
+  }
+}
+
+/**
  * Corta los pedidos a redes de publicidad y rastreo antes de que salgan.
  * La decision vive en src/anuncios.js, que se testea aparte.
  */
@@ -301,6 +347,11 @@ function crearNavegador() {
 
   contenido.on('did-start-loading', avisarEstado);
   contenido.on('did-stop-loading', avisarEstado);
+
+  // YouTube es una sola pagina que se va reescribiendo, asi que el guion se
+  // instala al cargar el documento y despues sigue vivo por su cuenta.
+  contenido.on('dom-ready', () => inyectarSalteadorDeAnuncios(contenido));
+  contenido.on('did-frame-finish-load', () => inyectarSalteadorDeAnuncios(contenido));
   contenido.on('did-navigate', () => {
     // Cada pagina lleva su propia cuenta de bloqueos.
     navegador.anunciosBloqueados = 0;
@@ -776,9 +827,40 @@ ipcMain.on('vexa:accion', (_evento, accion) => {
 
 ipcMain.handle('vexa:config-ice', () => ({ iceServers: [...sesion.SERVIDORES_ICE] }));
 
-ipcMain.handle('vexa:armar-codigo', (_evento, tipo, sdp) => sesion.armarCodigo(tipo, sdp));
+/** Ajustes que la interfaz necesita conocer. */
+ipcMain.handle('vexa:ajustes', () => ({ servidor: ajustes.servidor, aviso: ajustes.aviso }));
 
-ipcMain.handle('vexa:leer-codigo', (_evento, texto) => sesion.leerCodigo(texto));
+ipcMain.handle('vexa:guardar-ajustes', (_evento, nuevos) => {
+  const revisado = config.validarServidor(nuevos?.servidor);
+  if (!revisado.ok) return revisado;
+
+  const guardado = config.guardar(rutaDeConfig(), { servidor: revisado.servidor });
+  if (!guardado.ok) return { ok: false, motivo: guardado.motivo };
+
+  ajustes = { servidor: revisado.servidor, aviso: '' };
+  console.log(`[vexa] Servidor de encuentro: ${ajustes.servidor || '(sin configurar)'}`);
+  return { ok: true, servidor: ajustes.servidor };
+});
+
+/** Crea la sala en el servidor y devuelve el codigo para pasarle al amigo. */
+ipcMain.handle('vexa:crear-sala', (_evento, oferta, codigoPedido) =>
+  sesion.crearSala(ajustes.servidor, oferta, codigoPedido));
+
+/** Busca la invitacion de una sala para entrar. */
+ipcMain.handle('vexa:buscar-sala', (_evento, codigo) =>
+  sesion.buscarSala(ajustes.servidor, codigo));
+
+/** Deja la respuesta del espectador en la sala. */
+ipcMain.handle('vexa:contestar-sala', (_evento, codigo, respuesta) =>
+  sesion.contestarSala(ajustes.servidor, codigo, respuesta));
+
+/** El anfitrion pregunta si su amigo ya entro. */
+ipcMain.handle('vexa:mirar-respuesta', (_evento, codigo) =>
+  sesion.mirarRespuesta(ajustes.servidor, codigo));
+
+/** Cancela una sala que quedo abierta. */
+ipcMain.handle('vexa:cerrar-sala', (_evento, codigo) =>
+  sesion.cerrarSala(ajustes.servidor, codigo));
 
 ipcMain.handle('vexa:copiar', (_evento, texto) => {
   if (typeof texto !== 'string' || texto === '') {
@@ -873,7 +955,18 @@ if (!app.requestSingleInstanceLock()) {
   // La app es oscura siempre, sin importar el tema del sistema operativo.
   nativeTheme.themeSource = 'dark';
 
-  app.whenReady().then(crearVentana).catch((error) => {
+  app.whenReady().then(() => {
+    ajustes = config.leer(rutaDeConfig());
+    // Util para probar contra un servidor local sin tocar la configuracion.
+    if (process.env.VEXA_SERVIDOR) {
+      const forzado = config.validarServidor(process.env.VEXA_SERVIDOR);
+      if (forzado.ok) ajustes = { servidor: forzado.servidor, aviso: '' };
+      else console.warn(`[vexa] Se ignoro VEXA_SERVIDOR: ${forzado.motivo}`);
+    }
+    if (ajustes.aviso !== '') console.warn(`[vexa] ${ajustes.aviso}`);
+    console.log(`[vexa] Servidor de encuentro: ${ajustes.servidor || '(sin configurar)'}`);
+    crearVentana();
+  }).catch((error) => {
     reportarError('Vexa no pudo iniciar', error.stack ?? error.message);
     app.exit(1);
   });

@@ -295,6 +295,69 @@
     .estado-sesion.error .punto { background: var(--error); }
     .estado-sesion.error { color: var(--error); }
 
+    .codigo-grande {
+      margin: 4px 0 14px;
+      padding: 18px 12px;
+      text-align: center;
+      background: #0a0b0f;
+      border: 1px solid var(--acento);
+      border-radius: 11px;
+      font: 700 34px/1.1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      letter-spacing: 4px;
+      color: var(--texto);
+      user-select: text;
+    }
+
+    .etiqueta {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      color: var(--tenue);
+    }
+
+    .nota { margin: 10px 0 0; color: var(--tenue); font-size: 12px; }
+    .nota code { color: var(--texto); font-size: 11px; }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 11px 13px;
+      background: #0a0b0f;
+      border: 1px solid var(--borde);
+      border-radius: 9px;
+      color: var(--texto);
+      font: inherit;
+      outline: none;
+      user-select: text;
+    }
+
+    input[type="text"]:focus { border-color: var(--acento); }
+
+    .codigo-entrada {
+      font: 700 24px/1.2 ui-monospace, Consolas, monospace;
+      letter-spacing: 3px;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .avanzado { margin-top: 14px; }
+
+    .avanzado summary {
+      cursor: pointer;
+      color: var(--tenue);
+      font-size: 13px;
+      list-style: none;
+    }
+
+    .avanzado summary::-webkit-details-marker { display: none; }
+    .avanzado summary::before { content: '+ '; color: var(--acento); }
+    .avanzado[open] summary::before { content: '- '; }
+    .avanzado summary:hover { color: var(--texto); }
+    .avanzado input { margin-top: 10px; }
+
+    .separador { border: 0; border-top: 1px solid var(--borde); margin: 18px 0; }
+
     /* --- Video del amigo (modo espectador) --- */
 
     #video-remoto {
@@ -394,46 +457,36 @@
     <section class="pantalla" id="pantalla-sesion">
       <div class="panel-sesion">
         <h2>Ver juntos</h2>
-        <p class="bajada">Uno invita y el otro mira. El video va directo entre las dos computadoras.</p>
+        <p class="bajada">Uno abre una sala y pasa el código. El otro lo escribe y entra.</p>
 
         <div id="sesion-elegir">
           <div class="fila">
-            <button class="texto principal" id="boton-invitar" type="button">Invitar a un amigo</button>
-            <button class="texto" id="boton-unirme" type="button">Tengo un código</button>
+            <button class="texto principal" id="boton-abrir" type="button">Abrir una sala</button>
+            <button class="texto" id="boton-entrar" type="button">Entrar con un código</button>
           </div>
+          <details class="avanzado">
+            <summary>Quiero elegir el código</summary>
+            <input type="text" id="codigo-propio" spellcheck="false" autocomplete="off"
+                   maxlength="24" placeholder="por ejemplo: pepe-y-yo">
+            <p class="nota">Letras, números y guiones. Si alguien más lo está usando, te avisa.</p>
+          </details>
         </div>
 
         <div id="sesion-anfitrion" hidden>
-          <div class="paso">
-            <h3>1 · Mandale este código a tu amigo</h3>
-            <textarea id="codigo-invitacion" readonly placeholder="Generando…"></textarea>
-            <div class="fila">
-              <button class="texto" id="boton-copiar-invitacion" type="button">Copiar código</button>
-            </div>
+          <p class="etiqueta">Pasale este código a tu amigo</p>
+          <div class="codigo-grande" id="codigo-sala">·····</div>
+          <div class="fila">
+            <button class="texto principal" id="boton-copiar-codigo" type="button">Copiar código</button>
           </div>
-          <div class="paso">
-            <h3>2 · Pegá acá la respuesta que te mande</h3>
-            <textarea id="respuesta-recibida" placeholder="VEXA1..."></textarea>
-            <div class="fila">
-              <button class="texto principal" id="boton-conectar" type="button">Conectar</button>
-            </div>
-          </div>
+          <p class="nota" id="nota-espera">Esperando a que entre… podés seguir navegando mientras tanto.</p>
         </div>
 
         <div id="sesion-espectador" hidden>
-          <div class="paso">
-            <h3>1 · Pegá el código que te pasó tu amigo</h3>
-            <textarea id="invitacion-recibida" placeholder="VEXA1..."></textarea>
-            <div class="fila">
-              <button class="texto principal" id="boton-responder" type="button">Generar respuesta</button>
-            </div>
-          </div>
-          <div class="paso" id="paso-respuesta" hidden>
-            <h3>2 · Mandale esta respuesta de vuelta</h3>
-            <textarea id="codigo-respuesta" readonly></textarea>
-            <div class="fila">
-              <button class="texto" id="boton-copiar-respuesta" type="button">Copiar respuesta</button>
-            </div>
+          <p class="etiqueta">Escribí el código que te pasaron</p>
+          <input type="text" id="codigo-para-entrar" spellcheck="false" autocomplete="off"
+                 maxlength="24" placeholder="4K7-M9P" class="codigo-entrada">
+          <div class="fila">
+            <button class="texto principal" id="boton-conectar" type="button">Entrar</button>
           </div>
         </div>
 
@@ -444,6 +497,22 @@
 
         <div class="fila" style="margin-top:14px">
           <button class="texto" id="boton-cortar" type="button">Cortar y volver</button>
+          <button class="texto" id="boton-ajustes" type="button">Ajustes</button>
+        </div>
+
+        <div id="bloque-ajustes" hidden>
+          <hr class="separador">
+          <p class="etiqueta">Servidor de Vexa</p>
+          <input type="text" id="campo-servidor" spellcheck="false" autocomplete="off"
+                 placeholder="https://mi-vexa.onrender.com">
+          <p class="nota">
+            Es el servidor que junta a las dos computadoras. Tiene que ser el mismo
+            en las dos. Está en <code>servidor/</code> del proyecto, y se publica
+            gratis (ver el README).
+          </p>
+          <div class="fila">
+            <button class="texto principal" id="boton-guardar-ajustes" type="button">Guardar</button>
+          </div>
         </div>
       </div>
     </section>

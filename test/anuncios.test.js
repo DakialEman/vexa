@@ -69,3 +69,35 @@ test('dominioDe saca el www y baja a minusculas', () => {
   assert.equal(dominioDe('http://sub.ejemplo.com'), 'sub.ejemplo.com');
   assert.equal(dominioDe('basura'), null);
 });
+
+test('reconoce las direcciones de YouTube, incluidas las incrustadas', () => {
+  const { esYoutube } = require('../src/anuncios.js');
+  for (const url of [
+    'https://www.youtube.com/watch?v=abc',
+    'https://youtube.com/',
+    'https://m.youtube.com/watch?v=abc',
+    'https://www.youtube-nocookie.com/embed/abc',
+    'https://youtu.be/abc',
+  ]) {
+    assert.equal(esYoutube(url), true, `deberia reconocer ${url}`);
+  }
+});
+
+test('no confunde otros sitios con YouTube', () => {
+  const { esYoutube } = require('../src/anuncios.js');
+  for (const url of [
+    'https://pelispedia.com/youtube',
+    'https://noyoutube.com/x',
+    'https://youtube.com.falso.net/x',
+    'basura',
+    null,
+  ]) {
+    assert.equal(esYoutube(url), false, `no deberia reconocer ${url}`);
+  }
+});
+
+test('YouTube no se bloquea por dominio: sus anuncios se saltan desde adentro', () => {
+  // Si lo bloquearamos, no habria video que ver.
+  assert.equal(decidir('https://www.youtube.com/watch?v=abc', PAGINA).bloquear, false);
+  assert.equal(decidir('https://rr1---sn-x.googlevideo.com/videoplayback', PAGINA).bloquear, false);
+});

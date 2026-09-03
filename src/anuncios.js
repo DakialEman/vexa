@@ -121,8 +121,36 @@ function decidir(url, urlDeLaPagina) {
   return { bloquear: true, motivo: `Publicidad o rastreo: ${dominio}` };
 }
 
+/**
+ * Dominios donde vive el reproductor de YouTube. Sus anuncios no se pueden
+ * cortar por dominio: vienen del mismo lugar que el video, asi que bloquearlos
+ * seria bloquear YouTube entero. Se saltan desde adentro de la pagina, con el
+ * guion de src/saltar-anuncios-youtube.js.
+ */
+const DOMINIOS_DE_YOUTUBE = new Set(['youtube.com', 'youtube-nocookie.com', 'youtu.be']);
+
+/**
+ * Dice si una direccion es de YouTube (incluidos los reproductores incrustados
+ * en otras paginas).
+ *
+ * @param {unknown} url
+ * @returns {boolean}
+ */
+function esYoutube(url) {
+  const dominio = dominioDe(url);
+  if (dominio === null) return false;
+
+  const partes = dominio.split('.');
+  for (let desde = 0; desde < partes.length - 1; desde += 1) {
+    if (DOMINIOS_DE_YOUTUBE.has(partes.slice(desde).join('.'))) return true;
+  }
+  return false;
+}
+
 module.exports = {
   DOMINIOS_BLOQUEADOS,
+  DOMINIOS_DE_YOUTUBE,
   decidir,
   dominioDe,
+  esYoutube,
 };

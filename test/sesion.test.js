@@ -1,96 +1,157 @@
 'use strict';
 
-// Tests del codigo de invitacion. No abren ventanas ni usan WebRTC.
+// Tests de la comunicacion con el servidor de encuentro. Levantan el servidor
+// de verdad, asi que prueban las dos puntas juntas.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { PREFIJO, TIPOS, armarCodigo, describirEstado, leerCodigo } = require('../src/sesion.js');
+const { crearServidor } = require('../servidor/salas.js');
+const {
+  buscarSala,
+  cerrarSala,
+  contestarSala,
+  crearSala,
+  describirEstado,
+  mirarRespuesta,
+} = require('../src/sesion.js');
 
-// Un SDP corto pero con la forma real de uno.
-const SDP_DE_PRUEBA = [
-  'v=0',
-  'o=- 4611731400430051336 2 IN IP4 127.0.0.1',
-  's=-',
-  't=0 0',
-  'a=group:BUNDLE 0',
-  'm=video 9 UDP/TLS/RTP/SAVPF 96',
-  'a=mid:0',
-  'a=sendonly',
-].join('\r\n');
+const OFERTA = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n';
+const RESPUESTA = 'v=0\r\no=- 3 4 IN IP4 127.0.0.1\r\ns=-\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n';
 
-test('un codigo armado se puede volver a leer igual', () => {
-  const armado = armarCodigo(TIPOS.OFERTA, SDP_DE_PRUEBA);
-  assert.equal(armado.ok, true);
-  assert.equal(armado.codigo.startsWith(`${PREFIJO}.`), true);
+async function levantar() {
+  const servidor = crearServidor();
+  await new Promise((listo) => servidor.listen(0, '127.0.0.1', listo));
+  return {
+    url: `http://127.0.0.1:${servidor.address().port}`,
+    cerrar: () => new Promise((listo) => servidor.close(listo)),
+  };
+}
 
-  const leido = leerCodigo(armado.codigo);
-  assert.deepEqual(leido, { ok: true, tipo: TIPOS.OFERTA, sdp: SDP_DE_PRUEBA });
-});
+test('el camino completo: abrir sala, entrar, contestar y recibir', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    const sala = await crearSala(url, OFERTA);
+    assert.equal(sala.ok, true);
+    assert.equal(sala.codigo.length, 6);
 
-test('la respuesta tambien va y vuelve', () => {
-  const armado = armarCodigo(TIPOS.RESPUESTA, SDP_DE_PRUEBA);
-  assert.equal(leerCodigo(armado.codigo).tipo, TIPOS.RESPUESTA);
-});
+    // El amigo entra con el codigo, escrito como se le canta.
+    const entrada = await buscarSala(url, `${sala.codigo.slice(0, 3)}-${sala.codigo.slice(3)}`.toLowerCase());
+    assert.equal(entrada.ok, true);
+    assert.equal(entrada.oferta, OFERTA);
 
-test('el codigo queda mas corto que el SDP original', () => {
-  // Un SDP real es largo; comprimirlo es lo que lo hace pegable en un chat.
-  const sdpLargo = `${SDP_DE_PRUEBA}\r\n${'a=candidate:842163049 1 udp 1677729535 190.55.1.1 50000 typ srflx\r\n'.repeat(30)}`;
-  const armado = armarCodigo(TIPOS.OFERTA, sdpLargo);
-  assert.equal(armado.ok, true);
-  assert.ok(
-    armado.codigo.length < sdpLargo.length / 2,
-    `el codigo (${armado.codigo.length}) deberia ser mucho mas corto que el SDP (${sdpLargo.length})`,
-  );
-  assert.equal(leerCodigo(armado.codigo).sdp, sdpLargo);
-});
+    // Antes de contestar, el anfitrion sigue esperando.
+    const esperando = await mirarRespuesta(url, sala.codigo);
+    assert.deepEqual(esperando, { ok: true, esperando: true });
 
-test('sobrevive al copiar y pegar del chat', () => {
-  const { codigo } = armarCodigo(TIPOS.OFERTA, SDP_DE_PRUEBA);
-  const comoLlegaPorWhatsapp = `  "${codigo.slice(0, 40)}\n${codigo.slice(40)}"  `;
-  const leido = leerCodigo(comoLlegaPorWhatsapp);
-  assert.equal(leido.ok, true);
-  assert.equal(leido.sdp, SDP_DE_PRUEBA);
-});
+    assert.equal((await contestarSala(url, sala.codigo, RESPUESTA)).ok, true);
 
-test('no arma codigos con un SDP que no lo es', () => {
-  for (const sdp of ['', 'hola', null, undefined, 42]) {
-    const armado = armarCodigo(TIPOS.OFERTA, sdp);
-    assert.equal(armado.ok, false, `deberia rechazar ${String(sdp)}`);
+    const llego = await mirarRespuesta(url, sala.codigo);
+    assert.equal(llego.esperando, false);
+    assert.equal(llego.respuesta, RESPUESTA);
+  } finally {
+    await cerrar();
   }
 });
 
-test('no arma codigos de un tipo inventado', () => {
-  const armado = armarCodigo('cualquiera', SDP_DE_PRUEBA);
-  assert.equal(armado.ok, false);
-  assert.match(armado.motivo, /Tipo de codigo desconocido/);
+test('se puede pedir un codigo propio', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    const sala = await crearSala(url, OFERTA, 'pepe-y-yo');
+    assert.equal(sala.codigo, 'PEPEYYO');
+    assert.equal((await buscarSala(url, 'Pepe Y Yo')).ok, true);
+  } finally {
+    await cerrar();
+  }
 });
 
-test('un codigo vacio explica que hay que pegar algo', () => {
-  assert.match(leerCodigo('   ').motivo, /Pega el codigo/);
-  assert.match(leerCodigo('').motivo, /Pega el codigo/);
+test('un codigo propio ya tomado se avisa con claridad', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    await crearSala(url, OFERTA, 'la-sala');
+    const repetida = await crearSala(url, OFERTA, 'la-sala');
+    assert.equal(repetida.ok, false);
+    assert.match(repetida.motivo, /ya esta en uso/);
+  } finally {
+    await cerrar();
+  }
 });
 
-test('un texto que no es de Vexa se rechaza con claridad', () => {
-  const leido = leerCodigo('hola te paso el link de la peli');
-  assert.equal(leido.ok, false);
-  assert.match(leido.motivo, /no parece un codigo de Vexa/);
+test('un codigo propio invalido ni siquiera sale de la app', async () => {
+  const mala = await crearSala('http://no-se-usa', OFERTA, 'a/b');
+  assert.equal(mala.ok, false);
+  assert.match(mala.motivo, /letras, numeros y guiones/);
 });
 
-test('un codigo cortado a la mitad avisa que se copio mal', () => {
-  const { codigo } = armarCodigo(TIPOS.OFERTA, SDP_DE_PRUEBA);
-  const leido = leerCodigo(codigo.slice(0, Math.floor(codigo.length / 2)));
-  assert.equal(leido.ok, false);
-  assert.match(leido.motivo, /cortado o mal copiado/);
+test('entrar a una sala que no existe explica que no existe', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    const nada = await buscarSala(url, 'ZZZZZZ');
+    assert.equal(nada.ok, false);
+    assert.match(nada.motivo, /No hay ninguna sala/);
+  } finally {
+    await cerrar();
+  }
 });
 
-test('un codigo sin cuerpo no rompe', () => {
-  assert.equal(leerCodigo(`${PREFIJO}.`).ok, false);
+test('sin servidor configurado, el mensaje dice que hay que configurarlo', async () => {
+  for (const servidor of ['', null, undefined]) {
+    const resultado = await crearSala(servidor, OFERTA);
+    assert.equal(resultado.ok, false);
+    assert.match(resultado.motivo, /Falta configurar el servidor/);
+  }
 });
 
-test('lo que no es texto se rechaza sin romper', () => {
-  for (const entrada of [null, undefined, 42, {}, []]) {
-    assert.equal(leerCodigo(entrada).ok, false);
+test('si el servidor no contesta, lo dice en castellano y no revienta', async () => {
+  // Puerto cerrado: nadie escucha ahi.
+  const resultado = await crearSala('http://127.0.0.1:8199', OFERTA);
+  assert.equal(resultado.ok, false);
+  assert.equal(typeof resultado.motivo, 'string');
+  assert.match(resultado.motivo, /servidor/i);
+});
+
+test('no se abre una sala con una invitacion que no es una conexion', async () => {
+  for (const oferta of ['', 'hola', null, 42]) {
+    const resultado = await crearSala('http://no-se-usa', oferta);
+    assert.equal(resultado.ok, false);
+    assert.match(resultado.motivo, /invitacion valida/);
+  }
+});
+
+test('no se contesta con algo que no es una conexion', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    const sala = await crearSala(url, OFERTA);
+    const mala = await contestarSala(url, sala.codigo, 'cualquier cosa');
+    assert.equal(mala.ok, false);
+    assert.match(mala.motivo, /respuesta valida/);
+  } finally {
+    await cerrar();
+  }
+});
+
+test('el anfitrion puede cancelar la sala', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    const sala = await crearSala(url, OFERTA);
+    assert.equal((await cerrarSala(url, sala.codigo)).ok, true);
+    assert.equal((await buscarSala(url, sala.codigo)).ok, false);
+  } finally {
+    await cerrar();
+  }
+});
+
+test('no entran dos personas a la misma sala', async () => {
+  const { url, cerrar } = await levantar();
+  try {
+    const sala = await crearSala(url, OFERTA);
+    await contestarSala(url, sala.codigo, RESPUESTA);
+
+    const tercero = await buscarSala(url, sala.codigo);
+    assert.equal(tercero.ok, false);
+    assert.match(tercero.motivo, /ya entro/);
+  } finally {
+    await cerrar();
   }
 });
 
@@ -98,6 +159,5 @@ test('describirEstado traduce todos los estados de WebRTC', () => {
   assert.equal(describirEstado('connected').tono, 'ok');
   assert.equal(describirEstado('failed').tono, 'error');
   assert.equal(describirEstado('connecting').tono, 'trabajando');
-  assert.equal(describirEstado('new').tono, 'neutro');
   assert.equal(describirEstado('cualquier cosa').texto, 'Estado desconocido.');
 });

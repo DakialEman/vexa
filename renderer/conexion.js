@@ -15,6 +15,13 @@
 // Si un servidor STUN no contesta, no nos quedamos colgados para siempre.
 const ESPERA_DE_DIRECCIONES = 6000;
 
+// Cada cuanto le preguntamos al servidor si el amigo entro.
+const CADA_CUANTO_PREGUNTO = 1500;
+
+// Cuantas veces preguntamos antes de dar la sala por vencida (unos 10 minutos,
+// que es lo que dura una sala en el servidor).
+const VUELTAS_MAXIMAS = Math.ceil((10 * 60 * 1000) / 1500);
+
 // Techo de calidad del video. 8 Mbps alcanza para 1080p con movimiento.
 const BITS_POR_SEGUNDO = 8_000_000;
 
@@ -47,6 +54,12 @@ function crearSesion(avisos) {
 
   /** 'solo' | 'anfitrion' | 'espectador' */
   let papel = 'solo';
+
+  /** Codigo de la sala abierta, mientras esperamos al amigo. */
+  let codigoDeLaSala = '';
+
+  /** Reloj que le pregunta al servidor si el amigo entro. */
+  let espera = null;
 
   /** Arranca una conexion limpia y engancha todos sus avisos. */
   async function nuevaConexion() {
@@ -182,10 +195,12 @@ function crearSesion(avisos) {
   }
 
   /**
-   * Anfitrion, paso 1: captura, arma la conexion y devuelve el codigo de
-   * invitacion para pasarle al amigo.
+   * Anfitrion: captura el navegador, abre la sala en el servidor y devuelve el
+   * codigo corto para pasarle al amigo. Despues queda esperando solo.
+   *
+   * @param {string} codigoPedido Codigo propio, o vacio para que salga uno al azar.
    */
-  async function crearInvitacion() {
+  async function abrirSala(codigoPedido) {
     papel = 'anfitrion';
     const pc = await nuevaConexion();
 
@@ -207,56 +222,96 @@ function crearSesion(avisos) {
     await pc.setLocalDescription(await pc.createOffer());
     await esperarDirecciones(pc);
 
-    return armar('oferta', pc.localDescription.sdp);
+    const sala = await window.vexa.crearSala(pc.localDescription.sdp, codigoPedido ?? '');
+    if (!sala.ok) {
+      cortar();
+      throw new Error(sala.motivo);
+    }
+
+    codigoDeLaSala = sala.codigo;
+    esperarAlAmigo();
+    return sala.codigo;
   }
 
   /**
-   * Espectador: lee la invitacion del amigo y devuelve el codigo de respuesta
-   * que tiene que mandarle de vuelta.
+   * Le pregunta al servidor, cada tanto, si el amigo ya entro. Cuando entra,
+   * la conexion se cierra sola y el usuario no tuvo que hacer nada.
    */
-  async function responderInvitacion(codigoPegado) {
-    const leido = await window.vexa.leerCodigo(codigoPegado);
-    if (!leido.ok) throw new Error(leido.motivo);
-    if (leido.tipo !== 'oferta') {
-      throw new Error('Ese es un codigo de respuesta, no una invitacion.');
+  function esperarAlAmigo() {
+    let vueltas = 0;
+
+    espera = setInterval(async () => {
+      vueltas += 1;
+
+      if (vueltas > VUELTAS_MAXIMAS) {
+        dejarDeEsperar();
+        avisos.alAviso('Nadie entro a la sala. El codigo vencio, crea una nueva.');
+        cortar();
+        return;
+      }
+
+      const mirada = await window.vexa.mirarRespuesta(codigoDeLaSala);
+
+      if (!mirada.ok) {
+        dejarDeEsperar();
+        avisos.alAviso(mirada.motivo);
+        return;
+      }
+
+      if (mirada.esperando) return;
+
+      dejarDeEsperar();
+
+      try {
+        if (!conexion || conexion.signalingState !== 'have-local-offer') return;
+        await conexion.setRemoteDescription({ type: 'answer', sdp: mirada.respuesta });
+      } catch (error) {
+        avisos.alAviso(`No se pudo completar la conexion: ${error.message}`);
+      }
+    }, CADA_CUANTO_PREGUNTO);
+  }
+
+  function dejarDeEsperar() {
+    if (espera !== null) {
+      clearInterval(espera);
+      espera = null;
     }
+  }
+
+  /**
+   * Espectador: entra a la sala con el codigo y listo. No tiene que mandarle
+   * nada de vuelta a nadie.
+   */
+  async function entrarASala(codigo) {
+    const sala = await window.vexa.buscarSala(codigo);
+    if (!sala.ok) throw new Error(sala.motivo);
 
     papel = 'espectador';
     const pc = await nuevaConexion();
 
-    await pc.setRemoteDescription({ type: 'offer', sdp: leido.sdp });
+    await pc.setRemoteDescription({ type: 'offer', sdp: sala.oferta });
     await pc.setLocalDescription(await pc.createAnswer());
     await esperarDirecciones(pc);
 
-    return armar('respuesta', pc.localDescription.sdp);
-  }
-
-  /** Anfitrion, paso 2: recibe la respuesta del amigo y cierra la conexion. */
-  async function aceptarRespuesta(codigoPegado) {
-    if (!conexion) throw new Error('Primero crea la invitacion.');
-
-    const leido = await window.vexa.leerCodigo(codigoPegado);
-    if (!leido.ok) throw new Error(leido.motivo);
-    if (leido.tipo !== 'respuesta') {
-      throw new Error('Ese es un codigo de invitacion, no una respuesta.');
+    const contestada = await window.vexa.contestarSala(sala.codigo, pc.localDescription.sdp);
+    if (!contestada.ok) {
+      cortar();
+      throw new Error(contestada.motivo);
     }
 
-    if (conexion.signalingState !== 'have-local-offer') {
-      throw new Error('Esta invitacion ya no sirve. Genera una nueva.');
-    }
-
-    await conexion.setRemoteDescription({ type: 'answer', sdp: leido.sdp });
-  }
-
-  /** Pide el codigo al proceso principal y traduce el error si no se pudo. */
-  async function armar(tipo, sdp) {
-    const armado = await window.vexa.armarCodigo(tipo, sdp);
-    if (!armado.ok) throw new Error(armado.motivo);
-    return armado.codigo;
+    return sala.codigo;
   }
 
   /** Corta todo y deja la sesion como al principio. */
   function cortar() {
+    dejarDeEsperar();
+
+    if (codigoDeLaSala !== '') {
+      // Que no quede una sala colgada ocupando el codigo.
+      window.vexa.cerrarSala(codigoDeLaSala).catch(() => {});
+      codigoDeLaSala = '';
+    }
+
     if (loQueTransmito) {
       loQueTransmito.getTracks().forEach((pista) => pista.stop());
       loQueTransmito = null;
@@ -278,11 +333,10 @@ function crearSesion(avisos) {
   }
 
   return {
-    aceptarRespuesta,
+    abrirSala,
     cortar,
-    crearInvitacion,
+    entrarASala,
     enviar,
-    responderInvitacion,
     get papel() {
       return papel;
     },

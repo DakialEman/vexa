@@ -1,20 +1,15 @@
 'use strict';
 
-// Vexa — logica de la sesion compartida, sin interfaz ni WebRTC.
-// Se ocupa del "codigo de invitacion": el texto que un amigo le pasa al otro
-// por WhatsApp para que las dos apps se encuentren. Adentro va la descripcion
-// de la conexion (SDP), comprimida para que el texto sea corto.
+// Vexa — hablar con el servidor de encuentro.
+//
+// El servidor guarda por unos minutos los datos que las dos computadoras
+// necesitan para encontrarse, y los borra apenas se encontraron. El video
+// nunca pasa por ahi: va directo entre las dos.
+//
+// Todo lo de aca devuelve {ok:true,...} o {ok:false, motivo} y nunca tira
+// excepciones: los errores de red son lo normal, no una excepcion.
 
-const zlib = require('node:zlib');
-
-/** Marca de agua del codigo. El 1 es la version del formato. */
-const PREFIJO = 'VEXA1';
-
-/** Quien manda que: el anfitrion arma la oferta, el espectador la respuesta. */
-const TIPOS = Object.freeze({
-  OFERTA: 'oferta',
-  RESPUESTA: 'respuesta',
-});
+const { validarParaEntrar, validarPersonalizado } = require('./codigos.js');
 
 /**
  * Servidores STUN publicos y gratuitos. Solo sirven para que cada computadora
@@ -26,83 +21,132 @@ const SERVIDORES_ICE = Object.freeze([
   { urls: 'stun:stun.cloudflare.com:3478' },
 ]);
 
+/** Cuanto esperamos al servidor antes de darlo por caido. */
+const ESPERA = 10_000;
+
 /** Un SDP de verdad siempre arranca declarando la version. */
 const PARECE_SDP = /(^|\n)v=0(\r?\n|$)/;
 
 /**
- * Arma el codigo que se le pasa al amigo.
+ * Habla con el servidor y traduce cualquier problema a un motivo en castellano.
  *
- * @param {string} tipo Uno de TIPOS.
- * @param {string} sdp Descripcion de la conexion generada por WebRTC.
- * @returns {{ok: true, codigo: string} | {ok: false, motivo: string}}
+ * @returns {Promise<{ok: true, datos: object} | {ok: false, motivo: string}>}
  */
-function armarCodigo(tipo, sdp) {
-  if (tipo !== TIPOS.OFERTA && tipo !== TIPOS.RESPUESTA) {
-    return { ok: false, motivo: `Tipo de codigo desconocido: ${String(tipo)}.` };
+async function pedir(servidor, camino, opciones = {}) {
+  if (typeof servidor !== 'string' || servidor === '') {
+    return { ok: false, motivo: 'Falta configurar el servidor de Vexa (boton Ajustes).' };
   }
 
-  if (typeof sdp !== 'string' || !PARECE_SDP.test(sdp)) {
-    return { ok: false, motivo: 'La conexion no genero una descripcion valida.' };
-  }
+  const cortar = AbortSignal.timeout(ESPERA);
+  let respuesta;
 
   try {
-    const paquete = JSON.stringify({ t: tipo, sdp });
-    const comprimido = zlib.deflateRawSync(Buffer.from(paquete, 'utf8'), { level: 9 });
-    return { ok: true, codigo: `${PREFIJO}.${comprimido.toString('base64url')}` };
+    respuesta = await fetch(`${servidor}${camino}`, {
+      method: opciones.metodo ?? 'GET',
+      headers: opciones.cuerpo ? { 'Content-Type': 'application/json' } : undefined,
+      body: opciones.cuerpo ? JSON.stringify(opciones.cuerpo) : undefined,
+      signal: cortar,
+    });
   } catch (error) {
-    return { ok: false, motivo: `No se pudo armar el codigo: ${error.message}` };
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      return { ok: false, motivo: 'El servidor de Vexa no contesta. Fijate si esta bien la direccion.' };
+    }
+    return { ok: false, motivo: `No se pudo hablar con el servidor: ${error.message}` };
   }
+
+  let datos;
+  try {
+    datos = await respuesta.json();
+  } catch {
+    datos = {};
+  }
+
+  if (!respuesta.ok) {
+    return { ok: false, motivo: datos.motivo ?? `El servidor contesto ${respuesta.status}.` };
+  }
+
+  return { ok: true, datos };
 }
 
 /**
- * Lee un codigo pegado por el usuario. Aguanta espacios, saltos de linea y
- * comillas, porque la gente lo copia y pega desde el chat.
- *
- * @param {unknown} texto
- * @returns {{ok: true, tipo: string, sdp: string} | {ok: false, motivo: string}}
+ * Abre una sala. Si se pide un codigo propio se usa ese; si no, el servidor
+ * inventa uno corto.
  */
-function leerCodigo(texto) {
-  if (typeof texto !== 'string') {
-    return { ok: false, motivo: 'No se recibio ningun codigo.' };
+async function crearSala(servidor, oferta, codigoPedido) {
+  if (typeof oferta !== 'string' || !PARECE_SDP.test(oferta)) {
+    return { ok: false, motivo: 'La conexion no genero una invitacion valida.' };
   }
 
-  // Fuera espacios, saltos de linea y comillas que arrastra el copiar y pegar.
-  const limpio = texto.replace(/\s+/g, '').replace(/^["'<]+|["'>]+$/g, '');
+  const cuerpo = { oferta };
 
-  if (limpio === '') {
-    return { ok: false, motivo: 'Pega el codigo que te paso tu amigo.' };
+  if (typeof codigoPedido === 'string' && codigoPedido.trim() !== '') {
+    const revisado = validarPersonalizado(codigoPedido);
+    if (!revisado.ok) return revisado;
+    cuerpo.codigo = revisado.codigo;
   }
 
-  if (!limpio.startsWith(`${PREFIJO}.`)) {
-    return { ok: false, motivo: 'Eso no parece un codigo de Vexa.' };
+  const respuesta = await pedir(servidor, '/salas', { metodo: 'POST', cuerpo });
+  if (!respuesta.ok) return respuesta;
+
+  return { ok: true, codigo: respuesta.datos.codigo, vence: respuesta.datos.vence };
+}
+
+/** Busca la invitacion de una sala para entrar. */
+async function buscarSala(servidor, codigo) {
+  const revisado = validarParaEntrar(codigo);
+  if (!revisado.ok) return revisado;
+
+  const respuesta = await pedir(servidor, `/salas/${revisado.codigo}`);
+  if (!respuesta.ok) return respuesta;
+
+  if (!PARECE_SDP.test(respuesta.datos.oferta ?? '')) {
+    return { ok: false, motivo: 'La sala no trae una invitacion valida.' };
   }
 
-  const cuerpo = limpio.slice(PREFIJO.length + 1);
-  if (cuerpo === '') {
-    return { ok: false, motivo: 'El codigo esta incompleto.' };
+  return { ok: true, codigo: revisado.codigo, oferta: respuesta.datos.oferta };
+}
+
+/** Deja la respuesta del espectador en la sala. */
+async function contestarSala(servidor, codigo, respuestaSdp) {
+  const revisado = validarParaEntrar(codigo);
+  if (!revisado.ok) return revisado;
+
+  if (typeof respuestaSdp !== 'string' || !PARECE_SDP.test(respuestaSdp)) {
+    return { ok: false, motivo: 'La conexion no genero una respuesta valida.' };
   }
 
-  let paquete;
-  try {
-    const crudo = zlib.inflateRawSync(Buffer.from(cuerpo, 'base64url'));
-    paquete = JSON.parse(crudo.toString('utf8'));
-  } catch {
-    return { ok: false, motivo: 'El codigo esta cortado o mal copiado. Pedile que te lo mande de nuevo.' };
+  return pedir(servidor, `/salas/${revisado.codigo}/respuesta`, {
+    metodo: 'POST',
+    cuerpo: { respuesta: respuestaSdp },
+  });
+}
+
+/**
+ * El anfitrion pregunta si su amigo ya entro.
+ *
+ * @returns {Promise<{ok: true, esperando: boolean, respuesta?: string} | {ok: false, motivo: string}>}
+ */
+async function mirarRespuesta(servidor, codigo) {
+  const revisado = validarParaEntrar(codigo);
+  if (!revisado.ok) return revisado;
+
+  const respuesta = await pedir(servidor, `/salas/${revisado.codigo}/respuesta`);
+  if (!respuesta.ok) return respuesta;
+
+  if (respuesta.datos.esperando) return { ok: true, esperando: true };
+
+  if (!PARECE_SDP.test(respuesta.datos.respuesta ?? '')) {
+    return { ok: false, motivo: 'Tu amigo contesto algo que no se entiende.' };
   }
 
-  if (paquete === null || typeof paquete !== 'object') {
-    return { ok: false, motivo: 'El codigo no tiene el formato esperado.' };
-  }
+  return { ok: true, esperando: false, respuesta: respuesta.datos.respuesta };
+}
 
-  if (paquete.t !== TIPOS.OFERTA && paquete.t !== TIPOS.RESPUESTA) {
-    return { ok: false, motivo: 'El codigo no dice si es una invitacion o una respuesta.' };
-  }
-
-  if (typeof paquete.sdp !== 'string' || !PARECE_SDP.test(paquete.sdp)) {
-    return { ok: false, motivo: 'El codigo no trae una conexion valida adentro.' };
-  }
-
-  return { ok: true, tipo: paquete.t, sdp: paquete.sdp };
+/** Cancela una sala que quedo abierta. */
+async function cerrarSala(servidor, codigo) {
+  const revisado = validarParaEntrar(codigo);
+  if (!revisado.ok) return revisado;
+  return pedir(servidor, `/salas/${revisado.codigo}`, { metodo: 'DELETE' });
 }
 
 /**
@@ -122,7 +166,7 @@ function describirEstado(estado) {
     case 'disconnected':
       return { texto: 'Se corto la conexion. Reintentando…', tono: 'trabajando' };
     case 'failed':
-      return { texto: 'No se pudo conectar. Prueben de nuevo con codigos nuevos.', tono: 'error' };
+      return { texto: 'No se pudo conectar. Prueben de nuevo.', tono: 'error' };
     case 'closed':
       return { texto: 'Conexion cerrada.', tono: 'neutro' };
     default:
@@ -131,10 +175,12 @@ function describirEstado(estado) {
 }
 
 module.exports = {
-  PREFIJO,
+  ESPERA,
   SERVIDORES_ICE,
-  TIPOS,
-  armarCodigo,
+  buscarSala,
+  cerrarSala,
+  contestarSala,
+  crearSala,
   describirEstado,
-  leerCodigo,
+  mirarRespuesta,
 };

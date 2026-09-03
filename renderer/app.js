@@ -27,18 +27,19 @@ const elementos = {
   elegir: document.getElementById('sesion-elegir'),
   bloqueAnfitrion: document.getElementById('sesion-anfitrion'),
   bloqueEspectador: document.getElementById('sesion-espectador'),
-  botonInvitar: document.getElementById('boton-invitar'),
-  botonUnirme: document.getElementById('boton-unirme'),
-  codigoInvitacion: document.getElementById('codigo-invitacion'),
-  botonCopiarInvitacion: document.getElementById('boton-copiar-invitacion'),
-  respuestaRecibida: document.getElementById('respuesta-recibida'),
+  botonAbrir: document.getElementById('boton-abrir'),
+  botonEntrar: document.getElementById('boton-entrar'),
+  codigoPropio: document.getElementById('codigo-propio'),
+  codigoSala: document.getElementById('codigo-sala'),
+  botonCopiarCodigo: document.getElementById('boton-copiar-codigo'),
+  notaEspera: document.getElementById('nota-espera'),
+  codigoParaEntrar: document.getElementById('codigo-para-entrar'),
   botonConectar: document.getElementById('boton-conectar'),
-  invitacionRecibida: document.getElementById('invitacion-recibida'),
-  botonResponder: document.getElementById('boton-responder'),
-  pasoRespuesta: document.getElementById('paso-respuesta'),
-  codigoRespuesta: document.getElementById('codigo-respuesta'),
-  botonCopiarRespuesta: document.getElementById('boton-copiar-respuesta'),
   botonCortar: document.getElementById('boton-cortar'),
+  botonAjustes: document.getElementById('boton-ajustes'),
+  bloqueAjustes: document.getElementById('bloque-ajustes'),
+  campoServidor: document.getElementById('campo-servidor'),
+  botonGuardarAjustes: document.getElementById('boton-guardar-ajustes'),
   estadoSesion: document.getElementById('estado-sesion'),
   estadoSesionTexto: document.getElementById('estado-sesion-texto'),
   videoRemoto: document.getElementById('video-remoto'),
@@ -247,9 +248,10 @@ function pintarEstadoSesion(estado) {
   if (estado !== 'connected') control = false;
   pintarControl({ conectado: estado === 'connected', papel: sesion.papel });
 
-  if (estado === 'connected' && sesion.papel === 'espectador') {
-    // Ya llega el video: nos salimos del panel para verlo en grande.
-    mostrarPantalla('ninguna');
+  if (estado === 'connected') {
+    // Ya estan conectados: el panel no hace falta mas.
+    if (sesion.papel === 'espectador') mostrarPantalla('ninguna');
+    else if (pantallaElegida === 'sesion') mostrarPantalla('inicio');
   }
 }
 
@@ -285,18 +287,17 @@ function abrirPanelSesion() {
 }
 
 /** Deja el panel como al principio, listo para empezar de nuevo. */
+/** Deja el panel como al principio, listo para empezar de nuevo. */
 function reiniciarPanel() {
   elementos.elegir.hidden = false;
   elementos.bloqueAnfitrion.hidden = true;
   elementos.bloqueEspectador.hidden = true;
-  elementos.pasoRespuesta.hidden = true;
-  elementos.codigoInvitacion.value = '';
-  elementos.codigoRespuesta.value = '';
-  elementos.respuestaRecibida.value = '';
-  elementos.invitacionRecibida.value = '';
+  elementos.codigoSala.textContent = '·····';
+  elementos.codigoParaEntrar.value = '';
+  elementos.notaEspera.textContent = 'Esperando a que entre… podés seguir navegando mientras tanto.';
 }
 
-async function copiar(boton, texto) {
+async function copiar(texto) {
   if (!texto) {
     mostrarAviso('Todavia no hay codigo para copiar.');
     return;
@@ -306,43 +307,24 @@ async function copiar(boton, texto) {
   else mostrarAviso(copiado.motivo);
 }
 
-/**
- * Mensajes que llegan por la conexion. Vienen de la computadora del otro, asi
- * que nada se toma como cierto sin mirarlo: cada caso valida lo suyo, y el
- * anfitrion vuelve a validar los mandos antes de repetirlos (src/control.js).
- */
-function recibirMensaje(mensaje) {
-  if (mensaje === null || typeof mensaje !== 'object') return;
+/** Muestra el codigo de sala partido al medio, que se lee mejor. */
+function comoSeLee(codigo) {
+  return codigo.length === 6 ? `${codigo.slice(0, 3)}-${codigo.slice(3)}` : codigo;
+}
 
-  switch (mensaje.tipo) {
-    // El anfitrion aviso que presto o recupero el control.
-    case 'control': {
-      if (sesion.papel !== 'espectador') return;
-      control = Boolean(mensaje.cedido);
-      pintarControl({ conectado: true, papel: 'espectador' });
-      mostrarAviso(control ? 'Te pasaron el control.' : 'Tu amigo recupero el control.');
-      refrescarEstado();
-      break;
-    }
+/** Antes de abrir o entrar, hay que tener servidor configurado. */
+async function hayServidor() {
+  const ajustes = await window.vexa.ajustes();
+  if (ajustes.servidor !== '') return true;
 
-    // El espectador con control quiere abrir una direccion.
-    case 'navegar': {
-      if (sesion.papel !== 'anfitrion' || !control) return;
-      window.vexa.navegarRemoto(mensaje.texto);
-      break;
-    }
+  mostrarAviso('Primero configura el servidor de Vexa, en Ajustes.');
+  abrirAjustes(true);
+  return false;
+}
 
-    // Un mando de mouse o teclado del espectador.
-    case 'raton':
-    case 'tecla': {
-      if (sesion.papel !== 'anfitrion' || !control) return;
-      window.vexa.mando(mensaje);
-      break;
-    }
-
-    default:
-      console.warn(`[vexa] Mensaje desconocido por la conexion: ${String(mensaje.tipo)}`);
-  }
+function abrirAjustes(abrir) {
+  elementos.bloqueAjustes.hidden = !abrir;
+  if (abrir) elementos.campoServidor.focus();
 }
 
 function conectarSesion() {
@@ -359,6 +341,80 @@ function conectarSesion() {
     tengoControl: () => control && sesion.papel === 'espectador',
   });
 
+  elementos.botonSesion.addEventListener('click', abrirPanelSesion);
+
+  // --- Anfitrion: abrir una sala ---
+  elementos.botonAbrir.addEventListener('click', () => {
+    intentar(elementos.botonAbrir, 'Abriendo…', async () => {
+      if (!(await hayServidor())) return;
+
+      elementos.elegir.hidden = true;
+      elementos.bloqueAnfitrion.hidden = false;
+      window.vexa.modo('anfitrion');
+
+      try {
+        const codigo = await sesion.abrirSala(elementos.codigoPropio.value);
+        elementos.codigoSala.textContent = comoSeLee(codigo);
+        await copiar(comoSeLee(codigo));
+      } catch (error) {
+        // Si no se pudo abrir, volvemos atras en vez de dejar el panel a medias.
+        elementos.elegir.hidden = false;
+        elementos.bloqueAnfitrion.hidden = true;
+        window.vexa.modo('solo');
+        throw error;
+      }
+    });
+  });
+
+  // --- Espectador: entrar con un codigo ---
+  elementos.botonEntrar.addEventListener('click', () => {
+    elementos.elegir.hidden = true;
+    elementos.bloqueEspectador.hidden = false;
+    elementos.codigoParaEntrar.focus();
+  });
+
+  elementos.botonConectar.addEventListener('click', () => {
+    intentar(elementos.botonConectar, 'Entrando…', async () => {
+      if (!(await hayServidor())) return;
+      await sesion.entrarASala(elementos.codigoParaEntrar.value);
+      window.vexa.modo('espectador');
+    });
+  });
+
+  elementos.codigoParaEntrar.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter') elementos.botonConectar.click();
+  });
+
+  elementos.botonCopiarCodigo.addEventListener('click', () => {
+    copiar(elementos.codigoSala.textContent);
+  });
+
+  elementos.botonCortar.addEventListener('click', () => {
+    sesion.cortar();
+    control = false;
+    window.vexa.modo('solo');
+    reiniciarPanel();
+    mostrarPantalla('inicio');
+  });
+
+  // --- Ajustes ---
+  elementos.botonAjustes.addEventListener('click', () => {
+    abrirAjustes(elementos.bloqueAjustes.hidden);
+  });
+
+  elementos.botonGuardarAjustes.addEventListener('click', () => {
+    intentar(elementos.botonGuardarAjustes, 'Guardando…', async () => {
+      const guardado = await window.vexa.guardarAjustes({ servidor: elementos.campoServidor.value });
+      if (!guardado.ok) {
+        mostrarAviso(guardado.motivo);
+        return;
+      }
+      elementos.campoServidor.value = guardado.servidor;
+      mostrarAviso(guardado.servidor === '' ? 'Servidor borrado.' : 'Servidor guardado.');
+      abrirAjustes(false);
+    });
+  });
+
   elementos.botonControl.addEventListener('click', () => {
     if (sesion.papel !== 'anfitrion') return;
     control = !control;
@@ -371,57 +427,6 @@ function conectarSesion() {
       mostrarAviso(control ? 'Le pasaste el control a tu amigo.' : 'Recuperaste el control.');
     }
     pintarControl({ conectado: true, papel: 'anfitrion' });
-  });
-
-  elementos.botonSesion.addEventListener('click', abrirPanelSesion);
-
-  elementos.botonInvitar.addEventListener('click', () => {
-    intentar(elementos.botonInvitar, 'Preparando…', async () => {
-      elementos.elegir.hidden = true;
-      elementos.bloqueAnfitrion.hidden = false;
-      window.vexa.modo('anfitrion');
-      const codigo = await sesion.crearInvitacion();
-      elementos.codigoInvitacion.value = codigo;
-      await copiar(elementos.botonCopiarInvitacion, codigo);
-    });
-  });
-
-  elementos.botonUnirme.addEventListener('click', () => {
-    elementos.elegir.hidden = true;
-    elementos.bloqueEspectador.hidden = false;
-    elementos.invitacionRecibida.focus();
-  });
-
-  elementos.botonResponder.addEventListener('click', () => {
-    intentar(elementos.botonResponder, 'Generando…', async () => {
-      const codigo = await sesion.responderInvitacion(elementos.invitacionRecibida.value);
-      window.vexa.modo('espectador');
-      elementos.codigoRespuesta.value = codigo;
-      elementos.pasoRespuesta.hidden = false;
-      await copiar(elementos.botonCopiarRespuesta, codigo);
-    });
-  });
-
-  elementos.botonConectar.addEventListener('click', () => {
-    intentar(elementos.botonConectar, 'Conectando…', async () => {
-      await sesion.aceptarRespuesta(elementos.respuestaRecibida.value);
-    });
-  });
-
-  elementos.botonCopiarInvitacion.addEventListener('click', () => {
-    copiar(elementos.botonCopiarInvitacion, elementos.codigoInvitacion.value);
-  });
-
-  elementos.botonCopiarRespuesta.addEventListener('click', () => {
-    copiar(elementos.botonCopiarRespuesta, elementos.codigoRespuesta.value);
-  });
-
-  elementos.botonCortar.addEventListener('click', () => {
-    sesion.cortar();
-    control = false;
-    window.vexa.modo('solo');
-    reiniciarPanel();
-    mostrarPantalla('inicio');
   });
 }
 
@@ -449,6 +454,16 @@ async function refrescarEstado() {
   }
 }
 
+async function cargarAjustes() {
+  try {
+    const ajustes = await window.vexa.ajustes();
+    elementos.campoServidor.value = ajustes.servidor;
+    if (ajustes.aviso !== '') mostrarAviso(ajustes.aviso);
+  } catch (error) {
+    mostrarAviso(`No se pudieron leer los ajustes: ${error.message}`);
+  }
+}
+
 async function mostrarVersion() {
   try {
     const info = await window.vexa.info();
@@ -470,6 +485,7 @@ if (hayPuente()) {
   conectarBotones();
   conectarSesion();
   conectarAvisosDelPrincipal();
+  cargarAjustes();
   mostrarVersion();
   refrescarEstado();
 }

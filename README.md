@@ -12,12 +12,20 @@ puede pasar al otro cuando haga falta.
 No es compartir la pantalla de la computadora: lo unico que viaja es el navegador
 interno de Vexa. Tampoco hace falta estar en la misma red ni usar Hamachi.
 
+Para verlo juntos, uno abre una sala y le pasa un codigo corto (`4K7-M9P`). El
+otro lo escribe y entra. Nada mas.
+
 ## Como se ejecuta
 
 ```bash
 npm install
 npm start
 ```
+
+La primera vez hay que decirle a Vexa cual es su **servidor de encuentro**, en
+el boton Ajustes del panel "Ver juntos". Ese servidor esta en `servidor/` de
+este mismo proyecto y se publica gratis: ver `servidor/README.md`. Tiene que
+ser el mismo en las dos computadoras.
 
 ## Como se prueba
 
@@ -136,7 +144,12 @@ vexa/
   main.js                 proceso principal: ventana, navegador interno, captura
   preload.js              puente seguro entre el proceso principal y la interfaz
   src/navegacion.js       logica de navegacion, sin interfaz (se testea sola)
-  src/sesion.js           codigos de invitacion (comprimir, leer, validar)
+  src/sesion.js           hablar con el servidor de encuentro
+  src/codigos.js          codigos de sala (generar, normalizar, validar)
+  src/config.js           configuracion del usuario, guardada en disco
+  src/saltar-anuncios-youtube.js  se inyecta en YouTube para saltear anuncios
+  servidor/salas.js       el servidor de encuentro (sin dependencias)
+  servidor/index.js       su arranque
   src/control.js          traduccion de los mandos que manda el espectador
   src/anuncios.js         que pedidos se bloquean por publicidad o rastreo
   build/generar-icono.js  dibuja build/icon.png (solo si hay que rehacerlo)
@@ -196,9 +209,14 @@ Puntos 1 y 2 del plan terminados.
   manda.
 - El video va **directo entre las dos computadoras** (WebRTC). No pasa por
   ningun servidor nuestro y no hace falta estar en la misma red.
-- Para encontrarse **no hace falta ningun servidor**: uno genera un codigo, se
-  lo pasa por chat, el otro lo pega y devuelve el suyo. Los codigos van
-  comprimidos y aguantan que el chat los corte en varias lineas.
+- Para encontrarse alcanza con un **codigo corto** (`4K7-M9P`): uno abre la
+  sala, se lo pasa por chat, el otro lo escribe y entra. No hay que devolver
+  nada. Se puede pedir un codigo propio (`pepe-y-yo`) si esta libre.
+- El codigo se puede escribir como sea: con guion o sin guion, en mayusculas o
+  minusculas. El alfabeto no tiene 0/O ni 1/I/L, para que no se confundan al
+  dictarlo por telefono.
+- Ese ida y vuelta lo hace el **servidor de encuentro** (`servidor/`), que
+  guarda unos kilobytes por unos minutos y los borra. El video no pasa por ahi.
 - El espectador ve el video a pantalla completa y no puede navegar: la barra le
   queda de solo lectura hasta que le pasen el control.
 - Calidad apuntada a 1080p con prioridad a que sea fluido, que es lo que importa
@@ -221,7 +239,9 @@ Puntos 1 y 2 del plan terminados.
 **Bloqueo de anuncios:**
 
 - Se cortan los pedidos a redes de publicidad, popunders y rastreo conocidos,
-  antes de que salgan de la maquina. La lista esta en `src/anuncios.js` y se
+  antes de que salgan de la maquina.
+- En YouTube, ademas, Vexa inyecta un guion que aprieta "Omitir" solo y, cuando
+  el anuncio no se puede omitir, lo adelanta hasta el final y lo silencia. La lista esta en `src/anuncios.js` y se
   amplia agregando dominios ahi.
 - La regla es conservadora a proposito: se bloquea por dominio y nunca lo que
   sirve la propia pagina, porque ahi vive el reproductor. Preferimos dejar
@@ -239,10 +259,16 @@ app incrustada adentro, y el ejecutable empaquetado abre y navega.
 - **Hay retraso.** Entre 0,2 y 0,5 segundos. Es constante, asi que se ve la peli
   igual, pero no es cero: eso solo se logra si cada uno carga el video por su
   lado, que es justo lo que Vexa no hace.
-- **Los codigos son largos** (unos 2 KB). Se pegan bien en WhatsApp, pero no son
-  lindos. Un servidor de encuentro chiquito los reemplazaria por un link.
+- **Hace falta publicar el servidor de encuentro** una vez, y que las dos
+  computadoras apunten al mismo. En un plan gratuito tipo Render, si estuvo un
+  rato sin uso, el primer intento puede tardar medio minuto en despertarlo.
 - **Si el proveedor de internet usa CGNAT**, la conexion directa puede no
   armarse. Ahi haria falta un servidor de reenvio (TURN) como respaldo.
 - **El bloqueo de anuncios es una lista propia**, no un uBlock. Corta lo mas
   comun; algun anuncio de una red que no este en la lista va a pasar. Se
   arregla agregando el dominio en `src/anuncios.js`.
+- **Los anuncios de YouTube son un caso aparte.** Vienen del mismo dominio que
+  el video, asi que no se pueden cortar por dominio sin romper YouTube: se
+  saltean desde adentro de la pagina. YouTube cambia eso cada tanto y el truco
+  deja de andar hasta que se ajustan los selectores de
+  `src/saltar-anuncios-youtube.js`.

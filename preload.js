@@ -47,11 +47,24 @@ contextBridge.exposeInMainWorld('vexa', {
   /** Servidores STUN para armar la conexion. */
   configuracionIce: () => ipcRenderer.invoke('vexa:config-ice'),
 
-  /** Arma el codigo de invitacion o de respuesta que se le pasa al amigo. */
-  armarCodigo: (tipo, sdp) => ipcRenderer.invoke('vexa:armar-codigo', tipo, sdp),
+  /** Ajustes del usuario (por ahora, la direccion del servidor). */
+  ajustes: () => ipcRenderer.invoke('vexa:ajustes'),
+  guardarAjustes: (nuevos) => ipcRenderer.invoke('vexa:guardar-ajustes', nuevos),
 
-  /** Lee un codigo pegado por el usuario. */
-  leerCodigo: (texto) => ipcRenderer.invoke('vexa:leer-codigo', texto),
+  /** Abre una sala y devuelve el codigo corto para pasarle al amigo. */
+  crearSala: (oferta, codigoPedido) => ipcRenderer.invoke('vexa:crear-sala', oferta, codigoPedido),
+
+  /** Busca la invitacion de una sala para entrar. */
+  buscarSala: (codigo) => ipcRenderer.invoke('vexa:buscar-sala', codigo),
+
+  /** Deja la respuesta en la sala. */
+  contestarSala: (codigo, respuesta) => ipcRenderer.invoke('vexa:contestar-sala', codigo, respuesta),
+
+  /** Pregunta si el amigo ya entro a la sala. */
+  mirarRespuesta: (codigo) => ipcRenderer.invoke('vexa:mirar-respuesta', codigo),
+
+  /** Cancela una sala abierta. */
+  cerrarSala: (codigo) => ipcRenderer.invoke('vexa:cerrar-sala', codigo),
 
   /** Copia texto al portapapeles. */
   copiar: (texto) => ipcRenderer.invoke('vexa:copiar', texto),
