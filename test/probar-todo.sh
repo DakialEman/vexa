@@ -92,6 +92,7 @@ echo
 en_la_app "2. La ventana abre y cierra"
 en_la_app "3. La pantalla y sus botones" VEXA_SMOKE_PANEL=1
 en_la_app "4. Caida de la conexion" VEXA_SMOKE_CAIDA=1
+en_la_app "4b. Capturar el navegador en las cuatro situaciones" VEXA_SMOKE_CAPTURA=1
 
 if hay "$PAGINA"; then
   en_la_app "5. Navegar a una pagina" VEXA_SMOKE_URL="$PAGINA"

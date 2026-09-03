@@ -27,6 +27,10 @@ const sesion = require('./src/sesion.js');
 const RUTA_PRELOAD = path.join(__dirname, 'preload.js');
 const RUTA_INDEX = path.join(__dirname, 'renderer', 'index.html');
 const RUTA_SALTA_ANUNCIOS = path.join(__dirname, 'src', 'saltar-anuncios-youtube.js');
+const RUTA_VACIO = path.join(__dirname, 'renderer', 'vacio.html');
+
+/** La misma pagina, como direccion. La guarda de navegacion la deja pasar. */
+const URL_VACIO = require('node:url').pathToFileURL(RUTA_VACIO).href;
 
 // Color de fondo de la ventana nativa. Va igual al del CSS para que no haya
 // un flash blanco entre que abre la ventana y termina de pintar el HTML.
@@ -90,6 +94,10 @@ const PROBAR_PANEL = MODO_HUMO && process.env.VEXA_SMOKE_PANEL === '1';
 // Con VEXA_SMOKE_CAIDA=1 se comprueba que, si la conexion se muere, el que
 // miraba vuelva a tener un Vexa usable.
 const PROBAR_CAIDA = MODO_HUMO && process.env.VEXA_SMOKE_CAIDA === '1';
+
+// Con VEXA_SMOKE_CAPTURA=1 se prueba en que condiciones se puede capturar el
+// navegador interno. Nacio de un "Timeout starting video source" al abrir sala.
+const PROBAR_CAPTURA = MODO_HUMO && process.env.VEXA_SMOKE_CAPTURA === '1';
 
 // Con VEXA_SMOKE_ROL se prueba de a dos Vexa de verdad: una abre la sala
 // ('anfitrion') y la otra entra con el codigo ('espectador'). Es lo mas
@@ -398,6 +406,11 @@ function crearNavegador() {
   // Dentro del navegador se navega libre, pero solo por paginas web.
   const frenarSiNoEsWeb = (evento, url) => {
     if (esNavegable(url)) return;
+    // La pagina de arranque de Vexa es un archivo local, y es la unica que
+    // puede serlo. Sin esta excepcion, la guarda bloquea la propia pagina de
+    // Vexa y el navegador queda sin nada cargado (que ademas no se puede
+    // capturar: da "Timeout starting video source" al abrir una sala).
+    if (url === URL_VACIO) return;
     evento.preventDefault();
     console.warn(`[vexa] Navegacion bloqueada por protocolo no permitido: ${url}`);
     avisarBarra('vexa:aviso', 'Se bloqueo un link que intentaba salir del navegador.');
@@ -483,6 +496,25 @@ function crearNavegador() {
 
   ventana.contentView.addChildView(vista);
   ubicarVista();
+
+  // Le damos algo que mostrar desde el arranque. No es un detalle estetico:
+  // un navegador que nunca cargo nada NO SE PUEDE CAPTURAR (da "Timeout
+  // starting video source"), asi que abrir una sala antes de buscar nada
+  // fallaba. Con esto cargado, la captura anda siempre.
+  contenido
+    .loadFile(RUTA_VACIO)
+    .then(() => {
+      // Y lo mostramos un instante. Suena raro, pero hace falta: Chromium no
+      // puede capturar una vista que nunca se dibujo, y sin esto abrir una
+      // sala antes de navegar a ningun lado fallaba con "Timeout starting
+      // video source". Como esta pagina tiene el mismo fondo que la app y su
+      // texto tarda un segundo en aparecer, el destello no se ve.
+      vista.setVisible(true);
+      setTimeout(() => actualizarVista(), 400);
+    })
+    .catch((error) => {
+      console.error(`[vexa] No se pudo preparar el navegador: ${error.message}`);
+    });
 }
 
 /**
@@ -636,6 +668,11 @@ function crearVentana() {
 
     if (PROBAR_CAIDA) {
       correrPruebaEnLaVentana('prueba-caida.js', 'Caida de la conexion');
+      return;
+    }
+
+    if (PROBAR_CAPTURA) {
+      correrPruebaEnLaVentana('prueba-captura.js', 'Captura del navegador');
       return;
     }
 
