@@ -70,6 +70,17 @@ const PROBAR_CONTROL = MODO_HUMO && process.env.VEXA_SMOKE_CONTROL === '1';
 // y que lo que la pagina necesita siga entrando.
 const PROBAR_ANUNCIOS = MODO_HUMO && process.env.VEXA_SMOKE_ANUNCIOS === '1';
 
+// Con VEXA_SMOKE_PANEL=1 se aprietan los botones de la pantalla, para cazar
+// errores de cableado que las otras pruebas no ven.
+const PROBAR_PANEL = MODO_HUMO && process.env.VEXA_SMOKE_PANEL === '1';
+
+/**
+ * Errores que la pantalla tiro durante una prueba. Un solo "Uncaught" alcanza
+ * para que no se conecte ningun boton, asi que cualquier prueba que los vea
+ * tiene que fallar aunque lo demas parezca andar.
+ */
+const erroresDeLaPantalla = [];
+
 /** @type {BrowserWindow | null} */
 let ventana = null;
 
@@ -542,6 +553,10 @@ function crearVentana() {
   ventana.once('ready-to-show', () => {
     ventana.show();
     console.log('[vexa] Ventana lista.');
+    if (PROBAR_PANEL) {
+      correrPruebaEnLaVentana('prueba-panel.js', 'Pantalla');
+      return;
+    }
     if (MODO_HUMO && URL_DE_HUMO === '') {
       console.log('[vexa] VEXA_SMOKE=1: cierro la ventana y salgo.');
       app.quit();
@@ -549,6 +564,27 @@ function crearVentana() {
   });
 
   prepararCaptura();
+
+  if (MODO_HUMO) {
+    // Sin esto, un error de la pantalla no se ve por ningun lado.
+    ventana.webContents.on('console-message', (...argumentos) => {
+      // La forma de este evento cambio entre versiones de Electron, asi que
+      // imprimimos lo que venga en vez de suponer.
+      const partes = argumentos.slice(1).map((a) => {
+        if (a === null || a === undefined) return '';
+        if (typeof a === 'object') {
+          return JSON.stringify({ level: a.level, message: a.message, line: a.lineNumber, source: a.sourceId });
+        }
+        return String(a);
+      });
+      const texto = partes.join(' | ');
+      if (texto.includes('[panel]') || texto.includes('[prueba]')) return;
+      if (/Uncaught|is not defined|is not a function/.test(texto)) {
+        erroresDeLaPantalla.push(texto);
+      }
+      console.log(`[pantalla] ${texto}`);
+    });
+  }
 
   ventana.on('resize', ubicarVista);
   ventana.on('maximize', ubicarVista);
@@ -650,36 +686,52 @@ function probarNavegador(destino) {
  * dentro de la ventana, que arma las dos puntas de la conexion y comprueba que
  * llegue video. Sale con 0 si llego y con 1 si no.
  */
-function probarSesion() {
-  const guion = path.join(__dirname, 'test', 'prueba-sesion-en-vivo.js');
+/**
+ * Corre una de las pruebas de test/ dentro de la ventana y sale segun el
+ * resultado. Las pruebas devuelven {ok, pasos, motivo}.
+ */
+function correrPruebaEnLaVentana(archivo, nombre) {
+  const guion = path.join(__dirname, 'test', archivo);
   let codigo;
 
   try {
     codigo = require('node:fs').readFileSync(guion, 'utf8');
   } catch (error) {
-    console.error(`[vexa] No se encontro la prueba de sesion: ${error.message}`);
+    console.error(`[vexa] No se encontro ${archivo}: ${error.message}`);
     app.exit(1);
     return;
   }
 
-  console.log('[vexa] Probando la sesion compartida…');
+  console.log(`[vexa] Probando: ${nombre}…`);
 
   ventana.webContents
     .executeJavaScript(codigo, true)
     .then((resultado) => {
       for (const paso of resultado.pasos) console.log(`[vexa]   ${paso}`);
+
+      if (erroresDeLaPantalla.length > 0) {
+        console.error(`[vexa] ${nombre}: la pantalla tiro ${erroresDeLaPantalla.length} error(es):`);
+        for (const error of erroresDeLaPantalla) console.error(`[vexa]   ${error}`);
+        app.exit(1);
+        return;
+      }
+
       if (resultado.ok) {
-        console.log('[vexa] Sesion compartida: anduvo.');
+        console.log(`[vexa] ${nombre}: anduvo.`);
         app.quit();
       } else {
-        console.error(`[vexa] Sesion compartida: fallo (${resultado.motivo}).`);
+        console.error(`[vexa] ${nombre}: fallo (${resultado.motivo}).`);
         app.exit(1);
       }
     })
     .catch((error) => {
-      console.error(`[vexa] La prueba de sesion reventó: ${error.message}`);
+      console.error(`[vexa] La prueba de ${nombre} reventó: ${error.message}`);
       app.exit(1);
     });
+}
+
+function probarSesion() {
+  correrPruebaEnLaVentana('prueba-sesion-en-vivo.js', 'Sesion compartida');
 }
 
 /**

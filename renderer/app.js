@@ -327,6 +327,45 @@ function abrirAjustes(abrir) {
   if (abrir) elementos.campoServidor.focus();
 }
 
+/**
+ * Mensajes que llegan por la conexion. Vienen de la computadora del otro, asi
+ * que nada se toma como cierto sin mirarlo: cada caso valida lo suyo, y el
+ * anfitrion vuelve a validar los mandos antes de repetirlos (src/control.js).
+ */
+function recibirMensaje(mensaje) {
+  if (mensaje === null || typeof mensaje !== 'object') return;
+
+  switch (mensaje.tipo) {
+    // El anfitrion aviso que presto o recupero el control.
+    case 'control': {
+      if (sesion.papel !== 'espectador') return;
+      control = Boolean(mensaje.cedido);
+      pintarControl({ conectado: true, papel: 'espectador' });
+      mostrarAviso(control ? 'Te pasaron el control.' : 'Tu amigo recupero el control.');
+      refrescarEstado();
+      break;
+    }
+
+    // El espectador con control quiere abrir una direccion.
+    case 'navegar': {
+      if (sesion.papel !== 'anfitrion' || !control) return;
+      window.vexa.navegarRemoto(mensaje.texto);
+      break;
+    }
+
+    // Un mando de mouse o teclado del espectador.
+    case 'raton':
+    case 'tecla': {
+      if (sesion.papel !== 'anfitrion' || !control) return;
+      window.vexa.mando(mensaje);
+      break;
+    }
+
+    default:
+      console.warn(`[vexa] Mensaje desconocido por la conexion: ${String(mensaje.tipo)}`);
+  }
+}
+
 function conectarSesion() {
   sesion = window.VexaConexion.crearSesion({
     alEstado: pintarEstadoSesion,

@@ -53,7 +53,15 @@ VEXA_SMOKE=1 VEXA_SMOKE_CONTROL=1 VEXA_SMOKE_URL=https://example.com npm start
 
 # comprueba que la publicidad quede afuera y lo demas entre
 VEXA_SMOKE=1 VEXA_SMOKE_ANUNCIOS=1 VEXA_SMOKE_URL=https://example.com npm start
+
+# aprieta los botones de la pantalla, como lo haria una persona
+VEXA_SMOKE=1 VEXA_SMOKE_PANEL=1 npm start
 ```
+
+La prueba de la pantalla ademas **falla si la pantalla tira cualquier error**,
+aunque los botones parezcan andar. Existe por un motivo concreto: alcanza un
+`ReferenceError` al arrancar para que no se conecte ni un boton, y desde afuera
+eso se ve como "aprieto y no pasa nada".
 
 Sale con codigo 0 si todo anduvo y 1 si algo fallo.
 
@@ -155,6 +163,7 @@ vexa/
   build/generar-icono.js  dibuja build/icon.png (solo si hay que rehacerlo)
   test/*.test.js          tests de esa logica
   test/prueba-sesion-en-vivo.js  prueba de la conexion real, corre dentro de la app
+  test/prueba-panel.js    prueba de la pantalla: aprieta los botones de verdad
   renderer/index.html     barra, pantallas y panel de sesion (siempre oscuros)
   renderer/app.js         logica de la interfaz
   renderer/conexion.js    conexion en vivo con el amigo (WebRTC)
