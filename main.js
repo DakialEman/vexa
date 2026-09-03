@@ -76,6 +76,11 @@ const PROBAR_ANUNCIOS = MODO_HUMO && process.env.VEXA_SMOKE_ANUNCIOS === '1';
 // errores de cableado que las otras pruebas no ven.
 const PROBAR_PANEL = MODO_HUMO && process.env.VEXA_SMOKE_PANEL === '1';
 
+// Con VEXA_SMOKE_ROL se prueba de a dos Vexa de verdad: una abre la sala
+// ('anfitrion') y la otra entra con el codigo ('espectador'). Es lo mas
+// parecido a dos amigos en dos computadoras que se puede hacer en una sola.
+const ROL_DE_PRUEBA = MODO_HUMO ? (process.env.VEXA_SMOKE_ROL ?? '') : '';
+
 /**
  * Errores que la pantalla tiro durante una prueba. Un solo "Uncaught" alcanza
  * para que no se conecte ningun boton, asi que cualquier prueba que los vea
@@ -589,6 +594,17 @@ function crearVentana() {
       correrPruebaEnLaVentana('prueba-panel.js', 'Pantalla');
       return;
     }
+
+    // El espectador no abre ninguna pagina: mira la del otro. Asi que su
+    // prueba arranca aca y no despues de navegar.
+    if (ROL_DE_PRUEBA !== '' && URL_DE_HUMO === '') {
+      correrPruebaEnLaVentana('prueba-de-a-dos.js', `Vexa como ${ROL_DE_PRUEBA}`, {
+        rol: ROL_DE_PRUEBA,
+        codigo: process.env.VEXA_SMOKE_CODIGO ?? '',
+      });
+      return;
+    }
+
     if (MODO_HUMO && URL_DE_HUMO === '') {
       console.log('[vexa] VEXA_SMOKE=1: cierro la ventana y salgo.');
       app.quit();
@@ -694,7 +710,12 @@ function probarNavegador(destino) {
     if (PROBAR_SESION) probarSesion();
     else if (PROBAR_CONTROL) probarControl();
     else if (PROBAR_ANUNCIOS) probarAnuncios();
-    else app.quit();
+    else if (ROL_DE_PRUEBA !== '') {
+      correrPruebaEnLaVentana('prueba-de-a-dos.js', `Vexa como ${ROL_DE_PRUEBA}`, {
+        rol: ROL_DE_PRUEBA,
+        codigo: process.env.VEXA_SMOKE_CODIGO ?? '',
+      });
+    } else app.quit();
   });
 
   contenido.once('did-fail-load', (_evento, codigo, descripcion, urlFallida) => {
@@ -723,7 +744,7 @@ function probarNavegador(destino) {
  * Corre una de las pruebas de test/ dentro de la ventana y sale segun el
  * resultado. Las pruebas devuelven {ok, pasos, motivo}.
  */
-function correrPruebaEnLaVentana(archivo, nombre) {
+function correrPruebaEnLaVentana(archivo, nombre, datos) {
   const guion = path.join(__dirname, 'test', archivo);
   let codigo;
 
@@ -737,8 +758,12 @@ function correrPruebaEnLaVentana(archivo, nombre) {
 
   console.log(`[vexa] Probando: ${nombre}…`);
 
+  // Las pruebas no ven las variables de entorno, asi que lo que necesitan
+  // saber se lo dejamos servido antes de que arranquen.
+  const preambulo = datos ? `window.__vexaPrueba = ${JSON.stringify(datos)};\n` : '';
+
   ventana.webContents
-    .executeJavaScript(codigo, true)
+    .executeJavaScript(preambulo + codigo, true)
     .then((resultado) => {
       for (const paso of resultado.pasos) console.log(`[vexa]   ${paso}`);
 
@@ -1055,8 +1080,10 @@ ipcMain.on('vexa:cerrar', (evento) => {
 // Ciclo de vida
 // ---------------------------------------------------------------------------
 
-// Una sola instancia de Vexa a la vez. Si se abre de nuevo, enfocamos la que ya existe.
-if (!app.requestSingleInstanceLock()) {
+// Una sola instancia de Vexa a la vez. Si se abre de nuevo, enfocamos la que ya
+// existe. La excepcion es VEXA_VARIAS=1, que sirve para probar dos Vexa a la
+// vez en la misma maquina (una hace de anfitrion y la otra de espectador).
+if (process.env.VEXA_VARIAS !== '1' && !app.requestSingleInstanceLock()) {
   console.log('[vexa] Ya hay una instancia abierta. Cierro esta.');
   app.quit();
 } else {

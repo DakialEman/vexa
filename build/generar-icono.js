@@ -12,13 +12,27 @@ const LADO = 512;
 const RADIO = 96; // esquinas redondeadas
 
 const FONDO = [11, 12, 15];
-const VIOLETA = [124, 92, 255];
-const CLARO = [231, 233, 239];
+
+// El degradado de la "V": va en diagonal, de violeta arriba a la izquierda a
+// celeste abajo a la derecha, pasando por un rosa que le da vida al medio.
+const ARRIBA = [139, 92, 246];   // violeta
+const MEDIO = [217, 110, 255];   // rosa
+const ABAJO = [56, 214, 238];    // celeste
 
 /** Mezcla dos colores. `cuanto` se acota a 0 (a) - 1 (b) para no salirse de rango. */
 function mezclar(a, b, cuanto) {
   const t = Math.min(1, Math.max(0, cuanto));
   return a.map((canal, i) => Math.round(canal + (b[i] - canal) * t));
+}
+
+/**
+ * Color del degradado en una posicion de 0 a 1.
+ * Tres paradas: violeta, rosa y celeste.
+ */
+function colorDelDegradado(donde) {
+  const t = Math.min(1, Math.max(0, donde));
+  if (t < 0.5) return mezclar(ARRIBA, MEDIO, t * 2);
+  return mezclar(MEDIO, ABAJO, (t - 0.5) * 2);
 }
 
 /** Distancia de un punto a un segmento, para dibujar los trazos de la V. */
@@ -59,9 +73,11 @@ function pintar() {
       );
 
       const enLaV = Math.min(1, Math.max(0, grosor - distancia + 0.5));
-      // La V va de violeta arriba a casi blanco abajo.
-      const color = mezclar(VIOLETA, CLARO, (y - 150) / 222);
-      const pixel = mezclar(FONDO, color, enLaV);
+
+      // El degradado avanza en diagonal: cuenta tanto lo que se baja como lo
+      // que se corre a la derecha. Asi no se ve como bandas horizontales.
+      const avance = ((x - 148) / 216 + (y - 150) / 222) / 2;
+      const pixel = mezclar(FONDO, colorDelDegradado(avance), enLaV);
       const opacidad = Math.round(dentroDelFondo(x, y) * 255);
 
       const donde = filaEmpieza + 1 + x * 4;
