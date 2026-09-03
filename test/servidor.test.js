@@ -227,3 +227,96 @@ test('el chequeo de salud contesta', async () => {
     await cerrar();
   }
 });
+
+test('detras de un proxy, cada usuario tiene su propia cuenta', async () => {
+  const { servidor, cerrar } = await levantar();
+  try {
+    const base = `http://127.0.0.1:${servidor.address().port}`;
+
+    // Un usuario quema su cuota probando codigos al azar.
+    let frenado = false;
+    for (let i = 0; i < 40 && !frenado; i += 1) {
+      const r = await fetch(`${base}/salas/AAAA${i}`, { headers: { 'X-Forwarded-For': '1.2.3.4' } });
+      if (r.status === 429) frenado = true;
+    }
+    assert.equal(frenado, true, 'el primero deberia haber quedado frenado');
+
+    // El otro, que no hizo nada, tiene que poder seguir.
+    const otro = await fetch(`${base}/salas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '5.6.7.8' },
+      body: JSON.stringify({ oferta: OFERTA }),
+    });
+    assert.equal(otro.status, 201, 'el segundo usuario no tendria que estar frenado');
+  } finally {
+    await cerrar();
+  }
+});
+
+test('la lista de proxies se lee de izquierda a derecha', async () => {
+  const { servidor, cerrar } = await levantar();
+  try {
+    const base = `http://127.0.0.1:${servidor.address().port}`;
+    // "cliente, proxy1, proxy2": el cliente es el primero.
+    let frenado = false;
+    for (let i = 0; i < 40 && !frenado; i += 1) {
+      const r = await fetch(`${base}/salas/BBBB${i}`, {
+        headers: { 'X-Forwarded-For': '9.9.9.9, 10.0.0.1, 10.0.0.2' },
+      });
+      if (r.status === 429) frenado = true;
+    }
+    assert.equal(frenado, true);
+
+    const otro = await fetch(`${base}/salas/CCCCCC`, {
+      headers: { 'X-Forwarded-For': '8.8.8.8, 10.0.0.1, 10.0.0.2' },
+    });
+    assert.notEqual(otro.status, 429, 'otro cliente detras del mismo proxy no deberia estar frenado');
+  } finally {
+    await cerrar();
+  }
+});
+
+test('no se pueden abrir salas sin fin', async () => {
+  const { servidor, pedir, cerrar } = await levantar();
+  try {
+    const { SALAS_MAXIMAS } = require('../servidor/salas.js');
+    // Llenamos a mano, que es mucho mas rapido que por HTTP.
+    for (let i = 0; i < SALAS_MAXIMAS; i += 1) {
+      servidor.salas.set(`LLENA${i}`, { oferta: OFERTA, respuesta: null, creada: Date.now() });
+    }
+
+    const llena = await pedir('POST', '/salas', { oferta: OFERTA });
+    assert.equal(llena.estado, 503);
+    assert.match(llena.datos.motivo, /lleno/);
+  } finally {
+    await cerrar();
+  }
+});
+
+test('cuando se libera lugar, se puede volver a abrir', async () => {
+  let momento = 1_000_000;
+  const { servidor, pedir, cerrar } = await levantar({ ahora: () => momento });
+  try {
+    const { SALAS_MAXIMAS } = require('../servidor/salas.js');
+    for (let i = 0; i < SALAS_MAXIMAS; i += 1) {
+      servidor.salas.set(`VIEJA${i}`, { oferta: OFERTA, respuesta: null, creada: momento });
+    }
+    momento += 11 * 60 * 1000; // las viejas ya vencieron
+
+    // Al estar lleno barre primero, asi que esta tiene que entrar.
+    const nueva = await pedir('POST', '/salas', { oferta: OFERTA });
+    assert.equal(nueva.estado, 201);
+  } finally {
+    await cerrar();
+  }
+});
+
+test('una oferta mas grande de lo razonable se rechaza', async () => {
+  const { pedir, cerrar } = await levantar();
+  try {
+    const enorme = await pedir('POST', '/salas', { oferta: `v=0\r\n${'a'.repeat(64 * 1024)}` });
+    assert.ok(enorme.estado === 400 || enorme.estado === 413, `dio ${enorme.estado}`);
+  } finally {
+    await cerrar();
+  }
+});

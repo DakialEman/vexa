@@ -13,12 +13,14 @@ const {
   ipcMain,
   nativeTheme,
   shell,
+  webFrameMain,
 } = require('electron');
 const path = require('node:path');
 
 const { esNavegable, interpretarEntrada } = require('./src/navegacion.js');
-const { decidir, esYoutube } = require('./src/anuncios.js');
+const { decidir, esYoutube, patronesParaFiltrar } = require('./src/anuncios.js');
 const config = require('./src/config.js');
+const idiomas = require('./src/idiomas.js');
 const { traducirEvento } = require('./src/control.js');
 const sesion = require('./src/sesion.js');
 
@@ -88,7 +90,7 @@ let ventana = null;
 let vista = null;
 
 /** Configuracion del usuario, leida al arrancar. */
-let ajustes = { servidor: '', aviso: '' };
+let ajustes = { servidor: '', idioma: idiomas.POR_DEFECTO, aviso: '' };
 
 /** Donde vive el archivo de configuracion. */
 function rutaDeConfig() {
@@ -262,20 +264,22 @@ function volverAlInicio() {
  * (la pestaña principal, y tambien los reproductores incrustados en otros
  * sitios). El guion se cuida solo de no instalarse dos veces.
  */
-function inyectarSalteadorDeAnuncios(contenido) {
+function inyectarEnUnMarco(marco) {
   const guion = leerGuionDeAnuncios();
   if (guion === '') return;
 
+  marco.executeJavaScript(guion, true).catch((error) => {
+    // Que un marco no acepte el guion no es motivo para romper nada.
+    console.warn(`[vexa] No se pudo saltear anuncios en ${marco.url}: ${error.message}`);
+  });
+}
+
+function inyectarSalteadorDeAnuncios(contenido) {
   const principal = contenido.mainFrame;
   if (!principal) return;
 
   for (const marco of [principal, ...principal.framesInSubtree]) {
-    if (!esYoutube(marco.url)) continue;
-
-    marco.executeJavaScript(guion, true).catch((error) => {
-      // Que un marco no acepte el guion no es motivo para romper nada.
-      console.warn(`[vexa] No se pudo saltear anuncios en ${marco.url}: ${error.message}`);
-    });
+    if (esYoutube(marco.url)) inyectarEnUnMarco(marco);
   }
 }
 
@@ -284,7 +288,11 @@ function inyectarSalteadorDeAnuncios(contenido) {
  * La decision vive en src/anuncios.js, que se testea aparte.
  */
 function bloquearAnuncios(sesionDelNavegador) {
-  sesionDelNavegador.webRequest.onBeforeRequest((detalles, responder) => {
+  // El filtro es lo que hace que esto no cueste velocidad: sin el, cada imagen
+  // y cada script de cada pagina tendria que pasar por aca.
+  const filtro = { urls: patronesParaFiltrar() };
+
+  sesionDelNavegador.webRequest.onBeforeRequest(filtro, (detalles, responder) => {
     const decision = decidir(detalles.url, detalles.referrer);
 
     if (!decision.bloquear) {
@@ -299,6 +307,20 @@ function bloquearAnuncios(sesionDelNavegador) {
     // manda cien mensajes seguidos a la barra sin ningun motivo.
     if (navegador.anunciosBloqueados % 5 === 1) avisarEstado();
   });
+}
+
+/**
+ * Le dice al navegador interno en que idioma pedir las paginas.
+ *
+ * Es la cabecera Accept-Language: la que hace que YouTube te salga en
+ * castellano o en ingles. Por eso cambiar el idioma de Vexa cambia tambien el
+ * de los sitios que abris.
+ */
+function aplicarIdiomaAlNavegador() {
+  if (!vista || vista.webContents.isDestroyed()) return;
+  const comoPide = idiomas.comoPideLasPaginas(ajustes.idioma);
+  vista.webContents.session.setUserAgent(AGENTE_DE_USUARIO, comoPide);
+  console.log(`[vexa] El navegador pide las paginas asi: ${comoPide}`);
 }
 
 function crearNavegador() {
@@ -318,8 +340,10 @@ function crearNavegador() {
 
   const contenido = vista.webContents;
   contenido.setUserAgent(AGENTE_DE_USUARIO);
+  aplicarIdiomaAlNavegador();
 
-  bloquearAnuncios(contenido.session);
+  // Se puede apagar con VEXA_SIN_BLOQUEO=1, para medir cuanto cuesta.
+  if (process.env.VEXA_SIN_BLOQUEO !== '1') bloquearAnuncios(contenido.session);
 
   // Los sitios no pueden pedir camara, microfono, ubicacion ni notificaciones.
   contenido.session.setPermissionRequestHandler((_contenido, permiso, responder) => {
@@ -362,7 +386,15 @@ function crearNavegador() {
   // YouTube es una sola pagina que se va reescribiendo, asi que el guion se
   // instala al cargar el documento y despues sigue vivo por su cuenta.
   contenido.on('dom-ready', () => inyectarSalteadorDeAnuncios(contenido));
-  contenido.on('did-frame-finish-load', () => inyectarSalteadorDeAnuncios(contenido));
+
+  // Solo miramos el marco que acaba de cargar, no todos los de la pagina: en
+  // un sitio con muchos iframes, recorrerlos enteros en cada carga se nota.
+  contenido.on('did-frame-finish-load', (_evento, esPrincipal, idProceso, idRuteo) => {
+    if (esPrincipal) return; // el principal ya lo cubre dom-ready
+    const marco = webFrameMain.fromId(idProceso, idRuteo);
+    if (!marco || !esYoutube(marco.url)) return;
+    inyectarEnUnMarco(marco);
+  });
   contenido.on('did-navigate', () => {
     // Cada pagina lleva su propia cuenta de bloqueos.
     navegador.anunciosBloqueados = 0;
@@ -648,6 +680,7 @@ function crearVentana() {
  */
 function probarNavegador(destino) {
   const contenido = vista.webContents;
+  const arranque = Date.now();
 
   const reloj = setTimeout(() => {
     console.error(`[vexa] La prueba tardo mas de ${ESPERA_MAXIMA_DE_HUMO} ms y se corta.`);
@@ -656,7 +689,7 @@ function probarNavegador(destino) {
 
   contenido.once('did-finish-load', () => {
     clearTimeout(reloj);
-    console.log(`[vexa] Pagina cargada: "${contenido.getTitle()}" en ${contenido.getURL()}`);
+    console.log(`[vexa] Pagina cargada en ${Date.now() - arranque} ms: "${contenido.getTitle()}"`);
     console.log(`[vexa] Navegador visible: ${vistaDebeVerse()}`);
     if (PROBAR_SESION) probarSesion();
     else if (PROBAR_CONTROL) probarControl();
@@ -880,18 +913,43 @@ ipcMain.on('vexa:accion', (_evento, accion) => {
 ipcMain.handle('vexa:config-ice', () => ({ iceServers: [...sesion.SERVIDORES_ICE] }));
 
 /** Ajustes que la interfaz necesita conocer. */
-ipcMain.handle('vexa:ajustes', () => ({ servidor: ajustes.servidor, aviso: ajustes.aviso }));
+ipcMain.handle('vexa:ajustes', () => ({
+  servidor: ajustes.servidor,
+  idioma: ajustes.idioma,
+  aviso: ajustes.aviso,
+  idiomasDisponibles: idiomas.listar(),
+}));
+
+/** Todos los textos de un idioma, para que la pantalla se dibuje sola. */
+ipcMain.handle('vexa:textos', (_evento, idioma) => ({
+  idioma: idiomas.normalizar(idioma ?? ajustes.idioma),
+  textos: idiomas.TEXTOS[idiomas.normalizar(idioma ?? ajustes.idioma)],
+  // El castellano va siempre, como respaldo de cualquier hueco.
+  respaldo: idiomas.TEXTOS[idiomas.POR_DEFECTO],
+}));
 
 ipcMain.handle('vexa:guardar-ajustes', (_evento, nuevos) => {
-  const revisado = config.validarServidor(nuevos?.servidor);
+  const revisado = config.validarServidor(nuevos?.servidor ?? ajustes.servidor);
   if (!revisado.ok) return revisado;
 
-  const guardado = config.guardar(rutaDeConfig(), { servidor: revisado.servidor });
+  const idioma = idiomas.normalizar(nuevos?.idioma ?? ajustes.idioma);
+  const cambioElIdioma = idioma !== ajustes.idioma;
+
+  const guardado = config.guardar(rutaDeConfig(), { servidor: revisado.servidor, idioma });
   if (!guardado.ok) return { ok: false, motivo: guardado.motivo };
 
-  ajustes = { servidor: revisado.servidor, aviso: '' };
+  ajustes = { servidor: revisado.servidor, idioma, aviso: '' };
   console.log(`[vexa] Servidor de encuentro: ${ajustes.servidor || '(sin configurar)'}`);
-  return { ok: true, servidor: ajustes.servidor };
+
+  if (cambioElIdioma) {
+    aplicarIdiomaAlNavegador();
+    // La pagina abierta se recarga sola, asi se ve en el idioma nuevo.
+    if (vista && !vista.webContents.isDestroyed() && navegador.hayPagina) {
+      vista.webContents.reload();
+    }
+  }
+
+  return { ok: true, servidor: ajustes.servidor, idioma };
 });
 
 /** Comprueba que el servidor este vivo (y lo despierta si estaba dormido). */

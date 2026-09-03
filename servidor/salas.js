@@ -18,8 +18,18 @@ const VIDA_DE_LA_SALA = 10 * 60 * 1000;
 /** Cada cuanto pasamos a barrer las salas vencidas. */
 const BARRIDO = 60 * 1000;
 
-/** Ninguna descripcion de conexion legitima pasa de esto. */
-const CUERPO_MAXIMO = 256 * 1024;
+/**
+ * Ninguna descripcion de conexion legitima pasa de esto. Un SDP real, con
+ * todas sus direcciones adentro, ronda los 3 KB; 32 alcanza y sobra.
+ */
+const CUERPO_MAXIMO = 32 * 1024;
+
+/**
+ * Tope de salas abiertas a la vez. Sin esto, alguien puede llenar la memoria
+ * del servidor creando salas y nunca usandolas. Con 500 salas de 32 KB el
+ * techo son 32 MB, que entra comodo hasta en el plan mas chico.
+ */
+const SALAS_MAXIMAS = 500;
 
 /** Pasado esto ya no seguimos leyendo por cortesia: cortamos y listo. */
 const TOPE_DURO = 4 * 1024 * 1024;
@@ -155,8 +165,28 @@ function crearServidor(opciones = {}) {
     return null;
   }
 
+  /**
+   * De quien viene el pedido, para llevarle la cuenta.
+   *
+   * Detras de un proxy (Render, Fly y cualquier hosting) todos los pedidos
+   * llegan con la IP del proxy, asi que sin mirar X-Forwarded-For un solo
+   * usuario activo frenaria a todos los demas.
+   *
+   * Esa cabecera se puede falsear, si: alguien podria inventar una IP distinta
+   * en cada pedido para escaparle al freno. Preferimos ese riesgo antes que la
+   * alternativa, que es frenar a usuarios legitimos entre si.
+   */
+  function deQuienViene(req) {
+    const reenviada = req.headers['x-forwarded-for'];
+    if (typeof reenviada === 'string' && reenviada !== '') {
+      const primera = reenviada.split(',')[0].trim();
+      if (primera !== '') return primera;
+    }
+    return req.socket.remoteAddress ?? 'desconocida';
+  }
+
   const servidor = http.createServer(async (req, res) => {
-    const ip = req.socket.remoteAddress ?? 'desconocida';
+    const ip = deQuienViene(req);
     const url = new URL(req.url, 'http://vexa');
     const partes = url.pathname.split('/').filter(Boolean);
 
@@ -190,6 +220,14 @@ function crearServidor(opciones = {}) {
 
       if (!pareceConexion(cuerpo.oferta)) {
         return responder(res, 400, { motivo: 'La invitacion no trae una conexion valida.' });
+      }
+
+      if (salas.size >= SALAS_MAXIMAS) {
+        // Antes de rechazar, sacamos lo que ya vencio: puede alcanzar.
+        barrer();
+        if (salas.size >= SALAS_MAXIMAS) {
+          return responder(res, 503, { motivo: 'El servidor esta lleno. Proba de nuevo en un rato.' });
+        }
       }
 
       let codigo;
@@ -278,6 +316,7 @@ function crearServidor(opciones = {}) {
 
 module.exports = {
   CUERPO_MAXIMO,
+  SALAS_MAXIMAS,
   ERRORES_POR_MINUTO,
   PEDIDOS_POR_MINUTO,
   TOPE_DURO,

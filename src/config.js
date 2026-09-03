@@ -13,9 +13,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-/** Servidor de encuentro por defecto. Vacio = todavia no configurado. */
+const idiomas = require('./idiomas.js');
+
+/** Valores de arranque. Servidor vacio = todavia no configurado. */
 const POR_DEFECTO = Object.freeze({
   servidor: '',
+  idioma: idiomas.POR_DEFECTO,
 });
 
 /**
@@ -81,6 +84,8 @@ function leer(ruta) {
 
   return {
     servidor: revisado.ok ? revisado.servidor : POR_DEFECTO.servidor,
+    // Un idioma desconocido no es motivo de aviso: se cae al castellano y listo.
+    idioma: idiomas.normalizar(datos.idioma),
     aviso: revisado.ok ? '' : `Se ignoro el servidor guardado: ${revisado.motivo}`,
   };
 }
@@ -91,14 +96,18 @@ function leer(ruta) {
  * medio escribir.
  *
  * @param {string} ruta
- * @param {{servidor?: string}} datos
+ * @param {{servidor?: string, idioma?: string}} datos
  * @returns {{ok: true} | {ok: false, motivo: string}}
  */
 function guardar(ruta, datos) {
   const revisado = validarServidor(datos?.servidor ?? '');
   if (!revisado.ok) return { ok: false, motivo: revisado.motivo };
 
-  const contenido = `${JSON.stringify({ servidor: revisado.servidor }, null, 2)}\n`;
+  const aGuardar = {
+    servidor: revisado.servidor,
+    idioma: idiomas.normalizar(datos?.idioma),
+  };
+  const contenido = `${JSON.stringify(aGuardar, null, 2)}\n`;
   const temporal = `${ruta}.tmp`;
 
   try {

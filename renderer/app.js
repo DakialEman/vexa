@@ -41,6 +41,7 @@ const elementos = {
   campoServidor: document.getElementById('campo-servidor'),
   botonGuardarAjustes: document.getElementById('boton-guardar-ajustes'),
   botonProbarServidor: document.getElementById('boton-probar-servidor'),
+  selectorIdioma: document.getElementById('selector-idioma'),
   estadoSesion: document.getElementById('estado-sesion'),
   estadoSesionTexto: document.getElementById('estado-sesion-texto'),
   videoRemoto: document.getElementById('video-remoto'),
@@ -48,16 +49,52 @@ const elementos = {
   textoControl: document.getElementById('texto-control'),
 };
 
-// Como se lee en pantalla cada estado de la conexion con el amigo.
+// Cada estado de WebRTC, con su clave de texto y su color.
 const ESTADOS = {
-  new: { texto: 'Sin conexion.', tono: 'neutro' },
-  connecting: { texto: 'Conectando con tu amigo…', tono: 'trabajando' },
-  connected: { texto: 'Conectados.', tono: 'ok' },
-  disconnected: { texto: 'Se corto la conexion. Reintentando…', tono: 'trabajando' },
-  failed: { texto: 'No se pudo conectar. Prueben de nuevo con codigos nuevos.', tono: 'error' },
-  closed: { texto: 'Sin conexion.', tono: 'neutro' },
-  desconocido: { texto: 'Estado desconocido.', tono: 'neutro' },
+  new: { clave: 'estado.sinConexion', tono: 'neutro' },
+  connecting: { clave: 'estado.conectando', tono: 'trabajando' },
+  connected: { clave: 'estado.conectados', tono: 'ok' },
+  disconnected: { clave: 'estado.corto', tono: 'trabajando' },
+  failed: { clave: 'estado.fallo', tono: 'error' },
+  closed: { clave: 'estado.cerrada', tono: 'neutro' },
+  desconocido: { clave: 'estado.desconocido', tono: 'neutro' },
 };
+
+// --- Idioma ---
+
+/** Textos del idioma actual, y el castellano como respaldo. */
+let diccionario = { idioma: 'es', textos: {}, respaldo: {} };
+
+/**
+ * Busca un texto por su clave.
+ *
+ * @param {string} clave
+ * @param {Record<string, string|number>} [datos] Reemplazos tipo {segundos}.
+ */
+function t(clave, datos) {
+  const texto = diccionario.textos[clave] ?? diccionario.respaldo[clave] ?? clave;
+  if (!datos) return texto;
+  return texto.replace(/\{(\w+)\}/g, (entero, nombre) =>
+    (Object.hasOwn(datos, nombre) ? String(datos[nombre]) : entero));
+}
+
+/**
+ * Escribe en pantalla todos los textos marcados en el HTML.
+ * `data-t` va al contenido, `data-t-ph` al placeholder, `data-t-title` al globo
+ * de ayuda. Se puede volver a llamar cuando cambia el idioma.
+ */
+function pintarTextos() {
+  for (const elemento of document.querySelectorAll('[data-t]')) {
+    elemento.textContent = t(elemento.dataset.t);
+  }
+  for (const elemento of document.querySelectorAll('[data-t-ph]')) {
+    elemento.placeholder = t(elemento.dataset.tPh);
+  }
+  for (const elemento of document.querySelectorAll('[data-t-title]')) {
+    elemento.title = t(elemento.dataset.tTitle);
+  }
+  document.documentElement.lang = diccionario.idioma;
+}
 
 // Dibujos del boton central: recargar cuando esta quieto, cruz cuando carga.
 const DIBUJO_RECARGAR = 'M21 12a9 9 0 1 1-3-6.7M21 4v5h-5';
@@ -111,9 +148,7 @@ function pintarEstado(estado) {
   elementos.cuentaBloqueados.textContent = String(bloqueados);
   elementos.insignia.classList.toggle('visible', bloqueados > 0);
   elementos.insignia.disabled = !estado.hayPopupBloqueado;
-  elementos.insignia.title = estado.hayPopupBloqueado
-    ? 'Clic para abrir la última ventana bloqueada (a veces el reproductor se abre así).'
-    : `${estado.anunciosBloqueados} anuncios y ${estado.popupsBloqueados} ventanas bloqueadas en esta página.`;
+  elementos.insignia.title = t('barra.bloqueadosAyuda');
 
   // Si el navegador esta visible tapa todo; si no, se ve la pantalla elegida.
   const tapado = estado.visible;
@@ -125,9 +160,7 @@ function pintarEstado(estado) {
   const mirando = estado.modo === 'espectador';
   const bloqueado = mirando && !control;
   elementos.entrada.readOnly = bloqueado;
-  elementos.entrada.placeholder = bloqueado
-    ? 'Estás mirando lo que abre tu amigo'
-    : 'Buscá algo o escribí una dirección';
+  elementos.entrada.placeholder = t(bloqueado ? 'barra.mirando' : 'barra.direccion');
   for (const boton of [elementos.atras, elementos.adelante, elementos.recargar, elementos.inicio]) {
     if (mirando) boton.disabled = true;
   }
@@ -140,15 +173,11 @@ function pintarControl({ conectado, papel }) {
   elementos.botonControl.disabled = papel !== 'anfitrion';
 
   if (papel === 'anfitrion') {
-    elementos.textoControl.textContent = control ? 'Quitar control' : 'Dar control';
-    elementos.botonControl.title = control
-      ? 'Tu amigo esta manejando tu navegador. Clic para recuperarlo.'
-      : 'Pasarle el control de tu navegador a tu amigo.';
+    elementos.textoControl.textContent = t(control ? 'barra.quitarControl' : 'barra.darControl');
+    elementos.botonControl.title = t(control ? 'barra.quitarControlAyuda' : 'barra.darControlAyuda');
   } else {
-    elementos.textoControl.textContent = control ? 'Tenés el control' : 'Mirando';
-    elementos.botonControl.title = control
-      ? 'Podes manejar el navegador de tu amigo.'
-      : 'Tu amigo tiene el control.';
+    elementos.textoControl.textContent = t(control ? 'barra.tenesControl' : 'barra.mirandoControl');
+    elementos.botonControl.title = t(control ? 'barra.tenesControlAyuda' : 'barra.mirandoControlAyuda');
   }
 
   elementos.videoRemoto.classList.toggle('con-control', control && papel === 'espectador');
@@ -160,11 +189,11 @@ async function navegar() {
   // De espectador con control, la direccion se la pedimos al anfitrion.
   if (sesion && sesion.papel === 'espectador') {
     if (!control) {
-      mostrarAviso('Pedile el control a tu amigo para poder navegar.');
+      mostrarAviso(t('aviso.pedileControl'));
       return;
     }
     if (!sesion.enviar({ tipo: 'navegar', texto })) {
-      mostrarAviso('No se pudo mandar el pedido: la conexion no esta lista.');
+      mostrarAviso(t('aviso.sinConexionParaMandar'));
     }
     elementos.entrada.blur();
     return;
@@ -245,8 +274,8 @@ function decirEstado(texto, tono) {
 
 /** Pinta el estado de la conexion y el puntito de la barra. */
 function pintarEstadoSesion(estado) {
-  const { texto, tono } = ESTADOS[estado] ?? ESTADOS.desconocido;
-  elementos.estadoSesionTexto.textContent = texto;
+  const { clave, tono } = ESTADOS[estado] ?? ESTADOS.desconocido;
+  elementos.estadoSesionTexto.textContent = t(clave);
   elementos.estadoSesion.className = `estado-sesion ${tono}`;
   elementos.botonSesion.classList.toggle('conectado', estado === 'connected');
   elementos.botonSesion.classList.toggle('trabajando', estado === 'connecting' || estado === 'disconnected');
@@ -301,16 +330,16 @@ function reiniciarPanel() {
   elementos.bloqueEspectador.hidden = true;
   elementos.codigoSala.textContent = '·····';
   elementos.codigoParaEntrar.value = '';
-  elementos.notaEspera.textContent = 'Esperando a que entre… podés seguir navegando mientras tanto.';
+  elementos.notaEspera.textContent = t('sesion.esperando');
 }
 
 async function copiar(texto) {
   if (!texto) {
-    mostrarAviso('Todavia no hay codigo para copiar.');
+    mostrarAviso(t('aviso.nadaQueCopiar'));
     return;
   }
   const copiado = await window.vexa.copiar(texto);
-  if (copiado.ok) mostrarAviso('Codigo copiado. Pasaselo a tu amigo.');
+  if (copiado.ok) mostrarAviso(t('aviso.codigoCopiado'));
   else mostrarAviso(copiado.motivo);
 }
 
@@ -324,7 +353,7 @@ async function hayServidor() {
   const ajustes = await window.vexa.ajustes();
   if (ajustes.servidor !== '') return true;
 
-  mostrarAviso('Primero configura el servidor de Vexa, en Ajustes.');
+  mostrarAviso(t('aviso.faltaServidor'));
   abrirAjustes(true);
   return false;
 }
@@ -348,7 +377,7 @@ function recibirMensaje(mensaje) {
       if (sesion.papel !== 'espectador') return;
       control = Boolean(mensaje.cedido);
       pintarControl({ conectado: true, papel: 'espectador' });
-      mostrarAviso(control ? 'Te pasaron el control.' : 'Tu amigo recupero el control.');
+      mostrarAviso(t(control ? 'aviso.teDieronControl' : 'aviso.recuperoControl'));
       refrescarEstado();
       break;
     }
@@ -401,14 +430,14 @@ function conectarSesion() {
 
       // En los planes gratuitos el servidor se duerme y despertarlo tarda.
       // Mejor decirlo que dejar al usuario mirando puntitos.
-      decirEstado('Hablando con el servidor… si estaba dormido puede tardar un minuto.', 'trabajando');
-      elementos.notaEspera.textContent = 'Esto puede tardar hasta un minuto la primera vez del dia.';
+      decirEstado(t('estado.hablandoServidor'), 'trabajando');
+      elementos.notaEspera.textContent = t('sesion.puedeTardar');
 
       try {
         const codigo = await sesion.abrirSala(elementos.codigoPropio.value);
         elementos.codigoSala.textContent = comoSeLee(codigo);
-        elementos.notaEspera.textContent = 'Esperando a que entre… podés seguir navegando mientras tanto.';
-        decirEstado('Sala abierta. Pasale el código a tu amigo.', 'ok');
+        elementos.notaEspera.textContent = t('sesion.esperando');
+        decirEstado(t('estado.salaAbierta'), 'ok');
         await copiar(comoSeLee(codigo));
       } catch (error) {
         // Si no se pudo abrir, volvemos atras en vez de dejar el panel a medias.
@@ -435,12 +464,12 @@ function conectarSesion() {
     intentar(elementos.botonConectar, 'Entrando…', async () => {
       if (!(await hayServidor())) return;
 
-      decirEstado('Buscando la sala… si el servidor dormia puede tardar un minuto.', 'trabajando');
+      decirEstado(t('estado.buscandoSala'), 'trabajando');
 
       try {
         await sesion.entrarASala(elementos.codigoParaEntrar.value);
         window.vexa.modo('espectador');
-        decirEstado('Entraste. Esperando el video…', 'trabajando');
+        decirEstado(t('estado.entraste'), 'trabajando');
       } catch (error) {
         decirEstado(error.message, 'error');
         throw error;
@@ -473,30 +502,61 @@ function conectarSesion() {
     intentar(elementos.botonProbarServidor, 'Probando…', async () => {
       const direccion = elementos.campoServidor.value.trim();
       if (direccion === '') {
-        mostrarAviso('Escribi primero la direccion del servidor.');
+        mostrarAviso(t('aviso.escribiServidor'));
         return;
       }
 
-      decirEstado('Probando el servidor… puede tardar un minuto si estaba dormido.', 'trabajando');
+      decirEstado(t('estado.probandoServidor'), 'trabajando');
       const prueba = await window.vexa.probarServidor(direccion);
 
       if (prueba.ok) {
-        decirEstado(`El servidor anda. Contesto en ${(prueba.demora / 1000).toFixed(1)} segundos.`, 'ok');
+        decirEstado(t('estado.servidorAnda', { segundos: (prueba.demora / 1000).toFixed(1) }), 'ok');
       } else {
         decirEstado(prueba.motivo, 'error');
       }
     });
   });
 
+  // El idioma se aplica al toque, sin apretar Guardar: se ve lo que elegiste.
+  //
+  // No usa `intentar` a proposito: esa funcion guarda el texto del boton para
+  // devolverlo despues, y al cambiar el idioma ese texto guardado quedaria en
+  // el idioma viejo, pisando la traduccion recien pintada.
+  elementos.selectorIdioma.addEventListener('change', async () => {
+    elementos.selectorIdioma.disabled = true;
+
+    try {
+      const guardado = await window.vexa.guardarAjustes({
+        servidor: elementos.campoServidor.value,
+        idioma: elementos.selectorIdioma.value,
+      });
+
+      if (!guardado.ok) {
+        mostrarAviso(guardado.motivo);
+        return;
+      }
+
+      await cargarIdioma(guardado.idioma);
+      mostrarAviso(t('aviso.idiomaGuardado'));
+    } catch (error) {
+      mostrarAviso(error.message);
+    } finally {
+      elementos.selectorIdioma.disabled = false;
+    }
+  });
+
   elementos.botonGuardarAjustes.addEventListener('click', () => {
     intentar(elementos.botonGuardarAjustes, 'Guardando…', async () => {
-      const guardado = await window.vexa.guardarAjustes({ servidor: elementos.campoServidor.value });
+      const guardado = await window.vexa.guardarAjustes({
+        servidor: elementos.campoServidor.value,
+        idioma: elementos.selectorIdioma.value,
+      });
       if (!guardado.ok) {
         mostrarAviso(guardado.motivo);
         return;
       }
       elementos.campoServidor.value = guardado.servidor;
-      mostrarAviso(guardado.servidor === '' ? 'Servidor borrado.' : 'Servidor guardado.');
+      mostrarAviso(t(guardado.servidor === '' ? 'aviso.servidorBorrado' : 'aviso.servidorGuardado'));
       abrirAjustes(false);
     });
   });
@@ -506,11 +566,11 @@ function conectarSesion() {
     control = !control;
     window.vexa.cederControl(control);
     if (!sesion.enviar({ tipo: 'control', cedido: control })) {
-      mostrarAviso('No se pudo avisarle a tu amigo: la conexion no esta lista.');
+      mostrarAviso(t('aviso.noSePudoAvisar'));
       control = !control;
       window.vexa.cederControl(control);
     } else {
-      mostrarAviso(control ? 'Le pasaste el control a tu amigo.' : 'Recuperaste el control.');
+      mostrarAviso(t(control ? 'aviso.pasasteControl' : 'aviso.recuperasteControl'));
     }
     pintarControl({ conectado: true, papel: 'anfitrion' });
   });
@@ -540,10 +600,30 @@ async function refrescarEstado() {
   }
 }
 
+/** Trae los textos del idioma pedido y los pinta en toda la pantalla. */
+async function cargarIdioma(idioma) {
+  diccionario = await window.vexa.textos(idioma);
+  pintarTextos();
+  // Los textos que se arman a mano tambien tienen que seguir el idioma.
+  refrescarEstado();
+}
+
 async function cargarAjustes() {
   try {
     const ajustes = await window.vexa.ajustes();
     elementos.campoServidor.value = ajustes.servidor;
+
+    elementos.selectorIdioma.replaceChildren();
+    for (const idioma of ajustes.idiomasDisponibles) {
+      const opcion = document.createElement('option');
+      opcion.value = idioma.codigo;
+      opcion.textContent = idioma.nombre;
+      elementos.selectorIdioma.append(opcion);
+    }
+    elementos.selectorIdioma.value = ajustes.idioma;
+
+    await cargarIdioma(ajustes.idioma);
+
     if (ajustes.aviso !== '') mostrarAviso(ajustes.aviso);
   } catch (error) {
     mostrarAviso(`No se pudieron leer los ajustes: ${error.message}`);
@@ -562,7 +642,7 @@ async function mostrarVersion() {
 /** Sin el puente del preload la interfaz no puede hacer nada: se avisa y se corta. */
 function hayPuente() {
   if (window.vexa && typeof window.vexa.navegar === 'function') return true;
-  document.body.textContent = 'Vexa no pudo iniciar: el puente con la aplicacion no cargo.';
+  document.body.textContent = 'Vexa no pudo iniciar: el puente con la aplicacion no cargo.'; // sin idioma todavia
   document.body.style.padding = '40px';
   return false;
 }

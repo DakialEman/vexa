@@ -98,3 +98,32 @@ test('guardar de nuevo pisa lo anterior sin dejar restos', () => {
   assert.equal(leer(ruta).servidor, 'https://dos.com');
   assert.deepEqual(fs.readdirSync(dir), ['config.json']);
 });
+
+test('el idioma se guarda y se vuelve a leer', () => {
+  const ruta = path.join(carpeta(), 'config.json');
+  guardar(ruta, { servidor: 'https://x.com', idioma: 'en' });
+  assert.equal(leer(ruta).idioma, 'en');
+});
+
+test('sin idioma guardado, arranca en castellano', () => {
+  const ruta = path.join(carpeta(), 'config.json');
+  guardar(ruta, { servidor: 'https://x.com' });
+  assert.equal(leer(ruta).idioma, 'es');
+  assert.equal(leer(path.join(carpeta(), 'nada.json')).idioma, 'es');
+});
+
+test('un idioma inventado no rompe: cae al castellano sin quejarse', () => {
+  const ruta = path.join(carpeta(), 'config.json');
+  fs.writeFileSync(ruta, JSON.stringify({ servidor: '', idioma: 'marciano' }));
+  const config = leer(ruta);
+  assert.equal(config.idioma, 'es');
+  assert.equal(config.aviso, '', 'un idioma raro no amerita molestar al usuario');
+});
+
+test('guardar el idioma no pisa el servidor ni al reves', () => {
+  const ruta = path.join(carpeta(), 'config.json');
+  guardar(ruta, { servidor: 'https://uno.com', idioma: 'pt' });
+  const leido = leer(ruta);
+  assert.equal(leido.servidor, 'https://uno.com');
+  assert.equal(leido.idioma, 'pt');
+});

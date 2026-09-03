@@ -73,6 +73,25 @@ const DOMINIOS_BLOQUEADOS = new Set([
 ]);
 
 /**
+ * Patrones de URL de todos los dominios bloqueados, en el formato que entiende
+ * el filtro de Chromium.
+ *
+ * Importa para la velocidad: sin filtro, CADA pedido de CADA pagina (imagenes,
+ * scripts, hojas de estilo) tiene que viajar al proceso principal para que le
+ * digamos que si. Con el filtro, solo llegan los pedidos que ya sabemos
+ * sospechosos, que en una pagina normal son un puñado.
+ *
+ * @returns {string[]}
+ */
+function patronesParaFiltrar() {
+  const patrones = [];
+  for (const dominio of DOMINIOS_BLOQUEADOS) {
+    patrones.push(`*://${dominio}/*`, `*://*.${dominio}/*`);
+  }
+  return patrones;
+}
+
+/**
  * Devuelve el dominio de una URL, o null si no se puede leer.
  * @param {unknown} url
  */
@@ -153,4 +172,5 @@ module.exports = {
   decidir,
   dominioDe,
   esYoutube,
+  patronesParaFiltrar,
 };

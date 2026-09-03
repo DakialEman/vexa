@@ -18,9 +18,9 @@ const ESPERA_DE_DIRECCIONES = 6000;
 // Cada cuanto le preguntamos al servidor si el amigo entro.
 const CADA_CUANTO_PREGUNTO = 1500;
 
-// Cuantas veces preguntamos antes de dar la sala por vencida (unos 10 minutos,
-// que es lo que dura una sala en el servidor).
-const VUELTAS_MAXIMAS = Math.ceil((10 * 60 * 1000) / 1500);
+// Cuanto insistimos antes de dar la sala por vencida. Va por reloj y no por
+// cantidad de vueltas, porque cada vuelta puede tardar lo suyo.
+const VIDA_DE_LA_SALA = 10 * 60 * 1000;
 
 // Techo de calidad del video. 8 Mbps alcanza para 1080p con movimiento.
 const BITS_POR_SEGUNDO = 8_000_000;
@@ -60,6 +60,9 @@ function crearSesion(avisos) {
 
   /** Reloj que le pregunta al servidor si el amigo entro. */
   let espera = null;
+
+  /** Si seguimos esperando al amigo. Corta las vueltas ya lanzadas. */
+  let esperando = false;
 
   /** Arranca una conexion limpia y engancha todos sus avisos. */
   async function nuevaConexion() {
@@ -238,12 +241,17 @@ function crearSesion(avisos) {
    * la conexion se cierra sola y el usuario no tuvo que hacer nada.
    */
   function esperarAlAmigo() {
-    let vueltas = 0;
+    const hasta = Date.now() + VIDA_DE_LA_SALA;
+    esperando = true;
 
-    espera = setInterval(async () => {
-      vueltas += 1;
+    // Una vuelta arranca recien cuando termino la anterior. Con setInterval se
+    // pisarian: un pedido al servidor recien despertado tarda hasta un minuto,
+    // y para entonces habria cuarenta pedidos en el aire, que ademas hacen
+    // saltar el freno por ritmo del propio servidor.
+    const otraVuelta = async () => {
+      if (!esperando) return;
 
-      if (vueltas > VUELTAS_MAXIMAS) {
+      if (Date.now() > hasta) {
         dejarDeEsperar();
         avisos.alAviso('Nadie entro a la sala. El codigo vencio, crea una nueva.');
         cortar();
@@ -251,6 +259,7 @@ function crearSesion(avisos) {
       }
 
       const mirada = await window.vexa.mirarRespuesta(codigoDeLaSala);
+      if (!esperando) return;
 
       if (!mirada.ok) {
         dejarDeEsperar();
@@ -258,7 +267,10 @@ function crearSesion(avisos) {
         return;
       }
 
-      if (mirada.esperando) return;
+      if (mirada.esperando) {
+        espera = setTimeout(otraVuelta, CADA_CUANTO_PREGUNTO);
+        return;
+      }
 
       dejarDeEsperar();
 
@@ -268,12 +280,15 @@ function crearSesion(avisos) {
       } catch (error) {
         avisos.alAviso(`No se pudo completar la conexion: ${error.message}`);
       }
-    }, CADA_CUANTO_PREGUNTO);
+    };
+
+    otraVuelta();
   }
 
   function dejarDeEsperar() {
+    esperando = false;
     if (espera !== null) {
-      clearInterval(espera);
+      clearTimeout(espera);
       espera = null;
     }
   }

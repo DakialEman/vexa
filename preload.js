@@ -49,6 +49,9 @@ contextBridge.exposeInMainWorld('vexa', {
 
   /** Ajustes del usuario (por ahora, la direccion del servidor). */
   ajustes: () => ipcRenderer.invoke('vexa:ajustes'),
+
+  /** Todos los textos de la interfaz en un idioma. */
+  textos: (idioma) => ipcRenderer.invoke('vexa:textos', idioma),
   guardarAjustes: (nuevos) => ipcRenderer.invoke('vexa:guardar-ajustes', nuevos),
 
   /** Comprueba que el servidor este vivo, y lo despierta si dormia. */
