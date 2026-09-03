@@ -59,6 +59,7 @@ const TEXTOS = {
     'inicio.atajoAtras': 'atrás',
     'inicio.atajoRecargar': 'recargar',
     'inicio.atajoDetener': 'detener',
+    'inicio.atajoCompleta': 'pantalla completa',
 
     // Error de carga
     'error.titulo': 'No se pudo abrir la página',
@@ -121,6 +122,7 @@ const TEXTOS = {
     'aviso.recuperasteControl': 'Recuperaste el control.',
     'aviso.noSePudoAvisar': 'No se pudo avisarle a tu amigo: la conexión no está lista.',
     'aviso.puenteRoto': 'Vexa no pudo iniciar: el puente con la aplicación no cargó.',
+    'aviso.comoSalirDeCompleta': 'Pantalla completa. Salí con F11 o Esc.',
   },
 
   en: {
@@ -152,6 +154,7 @@ const TEXTOS = {
     'inicio.atajoAtras': 'back',
     'inicio.atajoRecargar': 'reload',
     'inicio.atajoDetener': 'stop',
+    'inicio.atajoCompleta': 'full screen',
 
     'error.titulo': "Couldn't open the page",
     'error.detalle': 'Check the address or your internet connection.',
@@ -210,6 +213,7 @@ const TEXTOS = {
     'aviso.recuperasteControl': 'You took control back.',
     'aviso.noSePudoAvisar': "Couldn't tell your friend: the connection isn't ready.",
     'aviso.puenteRoto': "Vexa couldn't start: the bridge to the app didn't load.",
+    'aviso.comoSalirDeCompleta': 'Full screen. Press F11 or Esc to leave.',
   },
 
   pt: {
@@ -241,6 +245,7 @@ const TEXTOS = {
     'inicio.atajoAtras': 'voltar',
     'inicio.atajoRecargar': 'recarregar',
     'inicio.atajoDetener': 'parar',
+    'inicio.atajoCompleta': 'tela cheia',
 
     'error.titulo': 'Não foi possível abrir a página',
     'error.detalle': 'Verifique o endereço ou sua conexão com a internet.',
@@ -299,6 +304,7 @@ const TEXTOS = {
     'aviso.recuperasteControl': 'Você retomou o controle.',
     'aviso.noSePudoAvisar': 'Não foi possível avisar seu amigo: a conexão não está pronta.',
     'aviso.puenteRoto': 'O Vexa não conseguiu iniciar: a ponte com o aplicativo não carregou.',
+    'aviso.comoSalirDeCompleta': 'Tela cheia. Saia com F11 ou Esc.',
   },
 };
 

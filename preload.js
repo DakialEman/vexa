@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('vexa', {
   /** El espectador con control pidio abrir una direccion. */
   navegarRemoto: (texto) => ipcRenderer.send('vexa:navegar-remoto', texto),
 
+  /** Pantalla completa, para el que esta mirando el video del otro. */
+  pantallaCompleta: (completa) => ipcRenderer.send('vexa:pantalla-completa', completa),
+
   /** Cierra la ventana desde la interfaz. */
   cerrarVentana: () => ipcRenderer.send('vexa:cerrar'),
 

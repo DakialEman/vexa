@@ -156,6 +156,35 @@
       if (cuadros === 0) throw new Error('llego el video pero no se reprodujo ningun cuadro');
       anotar('video reproduciendose', `${cuadros} cuadros`);
 
+      // --- Pantalla completa, que es como se mira una pelicula ---
+      // Esta prueba usa su propia sesion, asi que el video no paso por la
+      // pantalla de la app: se lo damos nosotros, como haria ella.
+      const enPantalla = document.getElementById('video-remoto');
+      enPantalla.srcObject = videoRecibido;
+      enPantalla.classList.add('visible');
+      await enPantalla.play().catch(() => {});
+      await esperar(500);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F11', bubbles: true }));
+      await esperar(800);
+      if (!document.body.classList.contains('completo')) {
+        throw new Error('no se pudo poner el video en pantalla completa');
+      }
+      const videoEnPantalla = document.getElementById('video-remoto');
+      if (!videoEnPantalla.classList.contains('completo')) {
+        throw new Error('el video no se agrando en pantalla completa');
+      }
+      anotar('pantalla completa', 'el video tapa la barra');
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await esperar(800);
+      if (document.body.classList.contains('completo')) {
+        throw new Error('no se pudo salir de pantalla completa con Esc');
+      }
+      anotar('salir con Esc', 'anduvo');
+      enPantalla.classList.remove('visible');
+      enPantalla.srcObject = null;
+
       // El anfitrion tiene que habernos contado que esta mirando.
       for (let i = 0; i < 20 && paginaQueMiro === ''; i += 1) await esperar(500);
       if (paginaQueMiro === '') throw new Error('nunca me contaron que pagina esta mirando');

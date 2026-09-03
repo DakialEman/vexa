@@ -113,6 +113,9 @@ let sesion = null;
 // De anfitrion: si le prestaste el control. De espectador: si lo tenes.
 let control = false;
 
+// El que mira puso el video en pantalla completa.
+let enPantallaCompleta = false;
+
 // De espectador: que pagina esta mirando el anfitrion, para poder mostrarsela.
 let paginaDelAmigo = { url: '', titulo: '' };
 
@@ -269,12 +272,33 @@ function conectarBotones() {
     }
   });
 
-  // Ctrl+L lleva el foco a la barra, como en cualquier navegador.
   document.addEventListener('keydown', (evento) => {
+    // Ctrl+L lleva el foco a la barra, como en cualquier navegador.
     if ((evento.ctrlKey || evento.metaKey) && evento.key.toLowerCase() === 'l') {
       evento.preventDefault();
       elementos.entrada.focus();
+      return;
     }
+
+    // F11 entra y sale de pantalla completa; Esc solo sale.
+    if (evento.key === 'F11') {
+      evento.preventDefault();
+      ponerPantallaCompleta(!enPantallaCompleta);
+      return;
+    }
+
+    if (evento.key === 'Escape' && enPantallaCompleta) {
+      evento.preventDefault();
+      ponerPantallaCompleta(false);
+    }
+  });
+
+  // Doble clic en el video: pantalla completa, como en cualquier reproductor.
+  // Solo cuando NO tenes el control, porque si lo tenes ese doble clic le
+  // pertenece a la pagina del otro.
+  elementos.videoRemoto.addEventListener('dblclick', () => {
+    if (control) return;
+    ponerPantallaCompleta(!enPantallaCompleta);
   });
 }
 
@@ -319,10 +343,32 @@ function pintarEstadoSesion(estado) {
   }
 }
 
+/**
+ * Pantalla completa para el que esta mirando.
+ *
+ * El anfitrion ya la tiene, porque se la da el reproductor de la pagina. El
+ * espectador solo recibe un video, asi que la pantalla completa se la damos
+ * nosotros: el video tapa tambien la barra.
+ */
+function ponerPantallaCompleta(completa) {
+  // Solo tiene sentido cuando hay un video que mirar.
+  if (completa && !elementos.videoRemoto.classList.contains('visible')) return;
+
+  enPantallaCompleta = completa;
+  elementos.videoRemoto.classList.toggle('completo', completa);
+  document.body.classList.toggle('completo', completa);
+  window.vexa.pantallaCompleta(completa);
+
+  if (completa) mostrarAviso(t('aviso.comoSalirDeCompleta'));
+}
+
 /** Muestra u oculta el video que manda el amigo. */
 function pintarVideo(stream) {
   elementos.videoRemoto.srcObject = stream;
   elementos.videoRemoto.classList.toggle('visible', stream !== null);
+
+  // Sin video, la pantalla completa no tiene sentido: quedaria todo negro.
+  if (stream === null && enPantallaCompleta) ponerPantallaCompleta(false);
 
   if (stream) {
     elementos.videoRemoto.play().catch((error) => {

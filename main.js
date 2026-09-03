@@ -341,6 +341,11 @@ function crearNavegador() {
       sandbox: true,
       // Sin preload: en las paginas de internet no inyectamos nada de Vexa.
       webviewTag: false,
+      // Chromium frena las paginas que no estan a la vista para ahorrar
+      // bateria. En una app para ver peliculas eso es justo lo que no
+      // queremos: si minimizas Vexa o pasas a otra ventana, el video que le
+      // estas mandando a tu amigo se pondria a los saltos.
+      backgroundThrottling: false,
     },
   });
 
@@ -986,6 +991,15 @@ ipcMain.handle('vexa:guardar-ajustes', (_evento, nuevos) => {
   }
 
   return { ok: true, servidor: ajustes.servidor, idioma };
+});
+
+/**
+ * Pantalla completa para el que mira. El anfitrion la tiene por la pagina
+ * misma; el espectador solo ve un video, asi que se la damos nosotros.
+ */
+ipcMain.on('vexa:pantalla-completa', (_evento, completa) => {
+  if (!ventana || ventana.isDestroyed()) return;
+  ventana.setFullScreen(Boolean(completa));
 });
 
 /** Comprueba que el servidor este vivo (y lo despierta si estaba dormido). */

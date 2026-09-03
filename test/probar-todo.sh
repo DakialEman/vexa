@@ -32,12 +32,27 @@ anotar() {
 hay() { curl -s -m 3 -o /dev/null "$1" 2>/dev/null; }
 
 # Corre la app en modo prueba y mira si salio bien.
+#
+# Ojo con el codigo de salida: NO se puede leer PIPESTATUS despues de un
+# `if tuberia; then :; fi`, porque ese `:` lo pisa y da siempre 0. Guardamos
+# la salida en un archivo, leemos $? de la orden sola, y recien despues
+# filtramos lo que se muestra.
 en_la_app() {
   local nombre="$1"; shift
+  local registro
+  registro="$(mktemp)"
+
   echo "--- $nombre ---"
-  if env "$@" VEXA_SMOKE=1 timeout 240 xvfb-run -a npx electron . --no-sandbox 2>&1 \
-      | grep -E "^\[vexa\]( +[a-z]|.*(anduvo|fallo|error))" ; then :; fi
-  local salida=${PIPESTATUS[0]}
+  env "$@" VEXA_SMOKE=1 timeout 240 xvfb-run -a npx electron . --no-sandbox > "$registro" 2>&1
+  local salida=$?
+
+  grep -E "^\[vexa\]( +[a-z]|.*(anduvo|fallo|error))" "$registro" || true
+  if [ "$salida" -ne 0 ]; then
+    echo "  (salio con $salida; ultimas lineas:)"
+    tail -6 "$registro" | sed 's/^/  /'
+  fi
+  rm -f "$registro"
+
   [ "$salida" -eq 0 ] && anotar bien "$nombre" || anotar mal "$nombre"
   echo
 }
@@ -48,8 +63,13 @@ echo "======================================"
 echo
 
 echo "--- 1. Logica (sin abrir ventanas) ---"
-if npm test 2>&1 | tail -8 | grep -E "^# (tests|pass|fail)"; then :; fi
-if npm test > /dev/null 2>&1; then anotar bien "logica"; else anotar mal "logica"; fi
+REGISTRO_LOGICA="$(mktemp)"
+npm test > "$REGISTRO_LOGICA" 2>&1
+SALIDA_LOGICA=$?
+grep -E "^# (tests|pass|fail)" "$REGISTRO_LOGICA" || true
+[ "$SALIDA_LOGICA" -ne 0 ] && grep -A 6 "^not ok" "$REGISTRO_LOGICA" | head -20
+rm -f "$REGISTRO_LOGICA"
+[ "$SALIDA_LOGICA" -eq 0 ] && anotar bien "logica" || anotar mal "logica"
 echo
 
 en_la_app "2. La ventana abre y cierra"
@@ -80,8 +100,12 @@ fi
 
 if hay "$SERVIDOR/salud" && hay "$PAGINA"; then
   echo "--- 9. Dos Vexa conectandose de verdad ---"
-  if bash test/probar-de-a-dos.sh "$SERVIDOR" "$PAGINA" "$PAGINA2" 2>&1 | tail -22; then :; fi
-  [ "${PIPESTATUS[0]}" -eq 0 ] && anotar bien "de a dos" || anotar mal "de a dos"
+  REGISTRO_DOS="$(mktemp)"
+  bash test/probar-de-a-dos.sh "$SERVIDOR" "$PAGINA" "$PAGINA2" > "$REGISTRO_DOS" 2>&1
+  SALIDA_DOS=$?
+  tail -24 "$REGISTRO_DOS"
+  rm -f "$REGISTRO_DOS"
+  [ "$SALIDA_DOS" -eq 0 ] && anotar bien "de a dos" || anotar mal "de a dos"
   echo
 else
   echo "(sin servidor: salteo la prueba de a dos)"; echo

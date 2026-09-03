@@ -98,6 +98,14 @@
       throw new Error('el bloque para entrar con codigo no se abrio');
     }
 
+    // 8. La pantalla completa no tiene que hacer nada si no hay video.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F11', bubbles: true }));
+    await new Promise((listo) => setTimeout(listo, 300));
+    if (document.body.classList.contains('completo')) {
+      throw new Error('se puso en pantalla completa sin ningun video que mostrar');
+    }
+    anotar('pantalla completa sin video', 'no hace nada, como corresponde');
+
     return { ok: true, pasos };
   } catch (error) {
     return { ok: false, motivo: error.message, pasos };

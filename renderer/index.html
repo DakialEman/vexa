@@ -389,6 +389,10 @@
 
     #video-remoto.visible { display: block; }
 
+    /* Pantalla completa: el video tapa tambien la barra. */
+    #video-remoto.completo { top: 0; height: 100vh; z-index: 20; }
+    body.completo header { display: none; }
+
     /* --- Aviso flotante --- */
 
     #aviso {
@@ -453,7 +457,7 @@
       <div class="ayuda">
         <div data-t="inicio.ayuda1"></div>
         <div data-t="inicio.ayuda2"></div>
-        <div><b data-t="inicio.ayuda3"></b> <kbd>Ctrl</kbd>+<kbd>L</kbd> <span data-t="inicio.atajoBarra"></span> · <kbd>Alt</kbd>+<kbd>←</kbd> <span data-t="inicio.atajoAtras"></span> · <kbd>F5</kbd> <span data-t="inicio.atajoRecargar"></span> · <kbd>Esc</kbd> <span data-t="inicio.atajoDetener"></span></div>
+        <div><b data-t="inicio.ayuda3"></b> <kbd>Ctrl</kbd>+<kbd>L</kbd> <span data-t="inicio.atajoBarra"></span> · <kbd>Alt</kbd>+<kbd>←</kbd> <span data-t="inicio.atajoAtras"></span> · <kbd>F5</kbd> <span data-t="inicio.atajoRecargar"></span> · <kbd>Esc</kbd> <span data-t="inicio.atajoDetener"></span> · <kbd>F11</kbd> <span data-t="inicio.atajoCompleta"></span></div>
         <div id="linea-version" class="lema" style="margin:2px 0 0"></div>
       </div>
     </section>
