@@ -1,0 +1,16 @@
+# Publicar el servidor de encuentro de Vexa en Render, gratis.
+#
+# Este archivo va en la raiz del proyecto a proposito: Render solo lo busca
+# aca. Se usa desde el menu "Blueprints" de Render, eligiendo este repositorio.
+#
+# Tambien se puede armar a mano como Web Service, con estos mismos valores.
+services:
+  - type: web
+    name: vexa-encuentro
+    runtime: node
+    plan: free
+    # El servidor no tiene dependencias. Sin esto Render correria npm install
+    # y se bajaria Electron entero al servidor, al pedo.
+    buildCommand: echo "sin dependencias que instalar"
+    startCommand: node servidor/index.js
+    healthCheckPath: /salud

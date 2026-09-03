@@ -29,14 +29,34 @@ publicarlo.
 
 ## Como se publica gratis
 
-### Render (lo mas facil)
+### Render, a mano (el camino seguro)
 
-1. Subi este proyecto a GitHub.
-2. Entra a [render.com](https://render.com) y crea una cuenta.
-3. **New > Blueprint**, elegi este repositorio.
-4. Render lee `servidor/render.yaml` y arma todo solo.
-5. Te queda una direccion tipo `https://vexa-encuentro.onrender.com`.
-6. Esa direccion va en **Ajustes** de Vexa, en las dos computadoras.
+1. Entra a [render.com](https://render.com) y crea una cuenta.
+2. **New > Web Service**, y conecta tu cuenta de GitHub cuando te lo pida.
+3. Elegi el repositorio `vexa`.
+4. Llena asi:
+
+   | Campo | Valor |
+   | --- | --- |
+   | Branch | la rama donde esta el codigo |
+   | Language / Runtime | `Node` |
+   | Build Command | `echo ok` |
+   | Start Command | `node servidor/index.js` |
+   | Instance Type | `Free` |
+
+   El **Build Command** es importante: si se deja el `npm install` que viene por
+   defecto, Render se baja Electron entero al servidor sin ninguna necesidad.
+
+5. **Create Web Service**. Cuando termine te queda una direccion tipo
+   `https://vexa-encuentro.onrender.com`.
+6. Para comprobar que anda, abri esa direccion con `/salud` al final. Tiene que
+   contestar `{"ok":true,"salas":0}`.
+7. Esa direccion va en **Ajustes** de Vexa, en las dos computadoras.
+
+### Render, con el Blueprint
+
+En el menu **Blueprints** de Render, eligiendo este repositorio: lee el
+`render.yaml` de la raiz y arma todo solo, sin llenar nada a mano.
 
 Un detalle del plan gratuito: si nadie lo usa por un rato, Render lo apaga, y
 el primer pedido despues tarda unos 30 segundos en despertarlo. Si al abrir una
