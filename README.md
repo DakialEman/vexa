@@ -194,7 +194,20 @@ la pantalla de inicio o el cartel de error.
 | `Ctrl` + `L` | Ir a la barra de direcciones |
 | `Alt` + `←` / `→` | Atras / adelante |
 | `F5` o `Ctrl` + `R` | Recargar |
-| `Esc` | Detener la carga |
+| `Esc` | Detener la carga, o salir de pantalla completa |
+| `F11` | Pantalla completa (para el que mira) |
+| `Ctrl` + `+` / `-` / `0` | Agrandar, achicar, volver a normal |
+
+El que mira tambien puede hacer doble clic en el video para pantalla completa,
+salvo cuando tiene el control (ahi ese doble clic va para la pagina del otro).
+
+## Idiomas
+
+Castellano, ingles y portugues, en **Ajustes**. Al cambiarlo cambia tambien el
+idioma en que el navegador interno pide las paginas, asi que los sitios pasan a
+verse en ese idioma. Los textos estan todos en `src/idiomas.js`; para sumar un
+idioma alcanza con agregar su tabla ahi, y un test avisa si quedo alguna clave
+sin traducir.
 
 ## Estado
 
@@ -271,9 +284,45 @@ Puntos 1 y 2 del plan terminados.
   la ultima por si era el reproductor de verdad.
 - La barra cuenta cuantos bloqueos hubo en la pagina actual.
 
+**Comodidades:**
+
+- Idioma de la interfaz y del navegador (castellano, ingles, portugues).
+- Pantalla completa para el que mira, que solo recibe un video y no tiene el
+  reproductor de la pagina.
+- Zoom del navegador, para mirar de lejos.
+- Barra de carga: no dice el porcentaje (Chromium no lo da), pero deja claro
+  que la pagina esta viniendo y que la app no se colgo.
+- El que mira ve en su barra que pagina esta mirando el otro.
+- Si la conexion se muere, el que miraba vuelve a tener un Vexa usable en vez
+  de quedarse con el video congelado.
+
 **Empaquetado:** listo, con icono propio y instalador de Windows con pasos
 (ver "Como se instala"). Verificado: se armo el instalador de 106 MB, con la
 app incrustada adentro, y el ejecutable empaquetado abre y navega.
+
+## Sobre la velocidad
+
+Medido en una pagina con 190 recursos, dentro de la app:
+
+| | Mediana |
+| --- | --- |
+| Sin bloqueo de anuncios | 321 ms |
+| Con el bloqueo mirando todos los pedidos | 353 ms |
+| Con el bloqueo filtrado (como esta ahora) | 318 ms |
+
+Tres cosas que costaban tiempo y ya no:
+
+- El bloqueo de anuncios miraba **todos** los pedidos de todas las paginas.
+  Ahora filtra por patrones de URL y solo le llegan los dominios de la lista.
+- Chromium frena las paginas que no estan a la vista. En una app para ver
+  peliculas eso es lo contrario de lo que queremos: si minimizas Vexa, el video
+  que le mandas a tu amigo se pone a los saltos. Apagado.
+- El corrector ortografico se baja diccionarios de internet la primera vez que
+  ve un campo de texto. Apagado: no sirve para nada aca.
+
+La ventana abre en unos 200 ms. Si usas el ejecutable **portable**, la primera
+vez tarda unos segundos mas porque se descomprime solo en cada arranque; el
+instalado no hace eso.
 
 ## Limites conocidos
 

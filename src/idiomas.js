@@ -60,6 +60,7 @@ const TEXTOS = {
     'inicio.atajoRecargar': 'recargar',
     'inicio.atajoDetener': 'detener',
     'inicio.atajoCompleta': 'pantalla completa',
+    'inicio.atajoZoom': 'agrandar o achicar',
 
     // Error de carga
     'error.titulo': 'No se pudo abrir la página',
@@ -155,6 +156,7 @@ const TEXTOS = {
     'inicio.atajoRecargar': 'reload',
     'inicio.atajoDetener': 'stop',
     'inicio.atajoCompleta': 'full screen',
+    'inicio.atajoZoom': 'zoom in or out',
 
     'error.titulo': "Couldn't open the page",
     'error.detalle': 'Check the address or your internet connection.',
@@ -246,6 +248,7 @@ const TEXTOS = {
     'inicio.atajoRecargar': 'recarregar',
     'inicio.atajoDetener': 'parar',
     'inicio.atajoCompleta': 'tela cheia',
+    'inicio.atajoZoom': 'aumentar ou diminuir',
 
     'error.titulo': 'Não foi possível abrir a página',
     'error.detalle': 'Verifique o endereço ou sua conexão com a internet.',

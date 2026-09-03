@@ -98,7 +98,29 @@
       throw new Error('el bloque para entrar con codigo no se abrio');
     }
 
-    // 8. La pantalla completa no tiene que hacer nada si no hay video.
+    // 8. La barra de carga tiene que aparecer y desaparecer con la carga.
+    const gancho = window.__vexaSesionDePrueba;
+    const base = {
+      visible: false, modo: 'solo', controlCedido: false, panelAbierto: true,
+      popupsBloqueados: 0, anunciosBloqueados: 0, hayPopupBloqueado: false,
+      url: '', titulo: '', puedeAtras: false, puedeAdelante: false,
+    };
+
+    gancho.simularEstadoDelNavegador({ ...base, cargando: true });
+    await new Promise((listo) => setTimeout(listo, 200));
+    if (!document.getElementById('cargando').classList.contains('visible')) {
+      throw new Error('la barra de carga no aparecio mientras cargaba');
+    }
+    anotar('barra de carga mientras carga', 'se ve');
+
+    gancho.simularEstadoDelNavegador({ ...base, cargando: false });
+    await new Promise((listo) => setTimeout(listo, 200));
+    if (document.getElementById('cargando').classList.contains('visible')) {
+      throw new Error('la barra de carga quedo puesta despues de cargar');
+    }
+    anotar('barra de carga al terminar', 'se va');
+
+    // 9. La pantalla completa no tiene que hacer nada si no hay video.
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F11', bubbles: true }));
     await new Promise((listo) => setTimeout(listo, 300));
     if (document.body.classList.contains('completo')) {

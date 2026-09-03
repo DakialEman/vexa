@@ -20,6 +20,7 @@ const elementos = {
   volver: document.getElementById('boton-volver'),
   lineaVersion: document.getElementById('linea-version'),
   aviso: document.getElementById('aviso'),
+  cargando: document.getElementById('cargando'),
 
   // Panel de sesion
   botonSesion: document.getElementById('boton-sesion'),
@@ -147,7 +148,8 @@ function pintarEstado(estado) {
     'd',
     estado.cargando ? DIBUJO_DETENER : DIBUJO_RECARGAR,
   );
-  elementos.recargar.title = estado.cargando ? 'Detener (Esc)' : 'Recargar (F5)';
+  elementos.recargar.title = t(estado.cargando ? 'barra.detener' : 'barra.recargar');
+  elementos.cargando.classList.toggle('visible', estado.cargando);
 
   if (!editandoBarra) {
     // El espectador no tiene navegador propio: en su barra va la pagina que
@@ -328,6 +330,13 @@ function pintarEstadoSesion(estado) {
     // Ya estan conectados: el panel no hace falta mas.
     if (sesion.papel === 'espectador') mostrarPantalla('ninguna');
     else if (pantallaElegida === 'sesion') mostrarPantalla('inicio');
+
+    // Y el anfitrion le cuenta enseguida que pagina esta mirando. Sin esto,
+    // si no navegaba a ningun lado el espectador se quedaba sin saberlo.
+    if (sesion.papel === 'anfitrion') {
+      ultimaPaginaAvisada = '';
+      refrescarEstado();
+    }
   }
 
   // Si la conexion se murio de verdad, el que miraba no puede quedarse con un
@@ -498,7 +507,10 @@ function conectarSesion() {
 
   // Gancho para las pruebas: permite simular estados de la conexion sin
   // necesitar una segunda computadora. No hace nada en el uso normal.
-  window.__vexaSesionDePrueba = { simularEstado: (estado) => pintarEstadoSesion(estado) };
+  window.__vexaSesionDePrueba = {
+    simularEstado: (estado) => pintarEstadoSesion(estado),
+    simularEstadoDelNavegador: (estado) => pintarEstado(estado),
+  };
 
   // Cuando el espectador tiene el control, lo que hace sobre el video viaja.
   window.VexaMando.conectarMando(elementos.videoRemoto, {

@@ -134,6 +134,41 @@
     .insignia:hover { border-color: var(--acento); color: var(--texto); }
     .insignia b { color: var(--acento); font-variant-numeric: tabular-nums; }
 
+    /* --- Barra de carga ---
+       No sabemos el porcentaje (Chromium no lo dice), asi que es una franja
+       que va y viene. Alcanza para que se note que la pagina esta viniendo y
+       la espera no parezca que la app se colgo. */
+
+    #cargando {
+      position: fixed;
+      left: 0;
+      top: calc(var(--alto-barra) - 2px);
+      width: 100%;
+      height: 2px;
+      z-index: 15;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity .2s;
+      pointer-events: none;
+    }
+
+    #cargando.visible { opacity: 1; }
+
+    #cargando::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, var(--acento), #38d6ee, transparent);
+      transform: translateX(-100%);
+      animation: barrer 1.1s ease-in-out infinite;
+    }
+
+    @keyframes barrer {
+      to { transform: translateX(100%); }
+    }
+
+    body.completo #cargando { display: none; }
+
     /* --- Zona de contenido (queda debajo del navegador cuando hay pagina) --- */
 
     main {
@@ -450,6 +485,8 @@
     </button>
   </header>
 
+  <div id="cargando"></div>
+
   <main>
     <section class="pantalla visible" id="pantalla-inicio">
       <h1>Vexa</h1>
@@ -457,7 +494,7 @@
       <div class="ayuda">
         <div data-t="inicio.ayuda1"></div>
         <div data-t="inicio.ayuda2"></div>
-        <div><b data-t="inicio.ayuda3"></b> <kbd>Ctrl</kbd>+<kbd>L</kbd> <span data-t="inicio.atajoBarra"></span> · <kbd>Alt</kbd>+<kbd>←</kbd> <span data-t="inicio.atajoAtras"></span> · <kbd>F5</kbd> <span data-t="inicio.atajoRecargar"></span> · <kbd>Esc</kbd> <span data-t="inicio.atajoDetener"></span> · <kbd>F11</kbd> <span data-t="inicio.atajoCompleta"></span></div>
+        <div><b data-t="inicio.ayuda3"></b> <kbd>Ctrl</kbd>+<kbd>L</kbd> <span data-t="inicio.atajoBarra"></span> · <kbd>Alt</kbd>+<kbd>←</kbd> <span data-t="inicio.atajoAtras"></span> · <kbd>F5</kbd> <span data-t="inicio.atajoRecargar"></span> · <kbd>Esc</kbd> <span data-t="inicio.atajoDetener"></span> · <kbd>F11</kbd> <span data-t="inicio.atajoCompleta"></span> · <kbd>Ctrl</kbd>+<kbd>+</kbd>/<kbd>-</kbd> <span data-t="inicio.atajoZoom"></span></div>
         <div id="linea-version" class="lema" style="margin:2px 0 0"></div>
       </div>
     </section>

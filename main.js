@@ -53,6 +53,9 @@ const PERMISOS_PERMITIDOS = new Set(['fullscreen']);
 // Sirve para verificar sin manos que la app arranca. Se activa con VEXA_SMOKE=1.
 const MODO_HUMO = process.env.VEXA_SMOKE === '1';
 
+/** Cuando arranco el proceso, para medir cuanto tarda en abrir la ventana. */
+const ARRANQUE = Date.now();
+
 // Si ademas se pasa VEXA_SMOKE_URL, la prueba navega a esa direccion y no sale
 // hasta confirmar que la pagina cargo. Asi se verifica el navegador entero.
 const URL_DE_HUMO = MODO_HUMO ? (process.env.VEXA_SMOKE_URL ?? '') : '';
@@ -509,6 +512,10 @@ function interpretarAtajo(entrada) {
   if (entrada.alt && entrada.key === 'ArrowLeft') return 'atras';
   if (entrada.alt && entrada.key === 'ArrowRight') return 'adelante';
   if (entrada.key === 'F5') return 'recargar';
+  // Zoom, para poder mirar de lejos o achicar una pagina que no entra.
+  if (control && (entrada.key === '+' || entrada.key === '=')) return 'acercar';
+  if (control && entrada.key === '-') return 'alejar';
+  if (control && entrada.key === '0') return 'zoom-normal';
   if (control && entrada.key.toLowerCase() === 'r') return 'recargar';
   if (control && entrada.key.toLowerCase() === 'l') return 'foco-barra';
   if (entrada.key === 'Escape') return 'detener';
@@ -535,6 +542,16 @@ function ejecutarAtajo(atajo) {
       break;
     case 'detener':
       vista.webContents.stop();
+      break;
+    case 'acercar':
+      // Chromium acepta de -8 a 9; nos quedamos en un rango razonable.
+      vista.webContents.setZoomLevel(Math.min(5, vista.webContents.getZoomLevel() + 0.5));
+      break;
+    case 'alejar':
+      vista.webContents.setZoomLevel(Math.max(-5, vista.webContents.getZoomLevel() - 0.5));
+      break;
+    case 'zoom-normal':
+      vista.webContents.setZoomLevel(0);
       break;
     case 'foco-barra':
       if (ventana && !ventana.isDestroyed()) ventana.webContents.focus();
@@ -598,7 +615,7 @@ function crearVentana() {
 
   ventana.once('ready-to-show', () => {
     ventana.show();
-    console.log('[vexa] Ventana lista.');
+    console.log(`[vexa] Ventana lista en ${Date.now() - ARRANQUE} ms.`);
     if (PROBAR_PANEL) {
       correrPruebaEnLaVentana('prueba-panel.js', 'Pantalla');
       return;
@@ -853,6 +870,23 @@ function probarControl() {
     const trasRecuperar = aplicarMando({ tipo: 'raton', accion: 'abajo', x: 0.5, y: 0.5 });
     console.log(`[vexa]   mando tras recuperar el control: ${trasRecuperar ? 'SE APLICO (mal)' : 'rechazado'}`);
     if (trasRecuperar) throw new Error('el control recuperado sigue aceptando mandos');
+
+    // --- Zoom del navegador ---
+    const zoomInicial = contenido.getZoomLevel();
+    ejecutarAtajo('acercar');
+    await esperar(200);
+    const zoomAcercado = contenido.getZoomLevel();
+    if (zoomAcercado <= zoomInicial) throw new Error('el zoom no acerco');
+
+    ejecutarAtajo('alejar');
+    ejecutarAtajo('alejar');
+    await esperar(200);
+    if (contenido.getZoomLevel() >= zoomAcercado) throw new Error('el zoom no alejo');
+
+    ejecutarAtajo('zoom-normal');
+    await esperar(200);
+    if (contenido.getZoomLevel() !== 0) throw new Error('el zoom no volvio a normal');
+    console.log('[vexa]   zoom: acerca, aleja y vuelve a normal');
 
     console.log('[vexa] Traspaso de control: anduvo.');
     app.quit();
