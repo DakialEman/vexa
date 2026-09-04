@@ -12,6 +12,7 @@ const {
   dialog,
   ipcMain,
   nativeTheme,
+  screen,
   shell,
   webFrameMain,
 } = require('electron');
@@ -636,9 +637,14 @@ function prepararCaptura() {
 // ---------------------------------------------------------------------------
 
 function crearVentana() {
+  // Arrancamos ocupando casi toda la pantalla. No es capricho: lo que ve tu
+  // amigo se captura al tamaño de esta ventana, asi que una ventana chica se
+  // le agranda del otro lado y se ve borrosa. Cuanto mas grande, mas nitido.
+  const pantalla = screen.getPrimaryDisplay().workAreaSize;
+
   ventana = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: Math.max(1180, Math.round(pantalla.width * 0.92)),
+    height: Math.max(760, Math.round(pantalla.height * 0.92)),
     minWidth: 860,
     minHeight: 560,
     backgroundColor: COLOR_FONDO,
@@ -655,6 +661,9 @@ function crearVentana() {
 
   ventana.once('ready-to-show', () => {
     ventana.show();
+    // Maximizada de entrada: mientras mas grande la ventana, mas nitido lo
+    // que recibe el otro. Se puede achicar a mano si molesta.
+    if (!MODO_HUMO) ventana.maximize();
     console.log(`[vexa] Ventana lista en ${Date.now() - ARRANQUE} ms.`);
     if (CARPETA_DE_FOTOS !== '') {
       sacarFotos(CARPETA_DE_FOTOS);

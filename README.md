@@ -324,6 +324,25 @@ La ventana abre en unos 200 ms. Si usas el ejecutable **portable**, la primera
 vez tarda unos segundos mas porque se descomprime solo en cada arranque; el
 instalado no hace eso.
 
+## Sobre la nitidez
+
+Lo que ve el otro se captura **al tamaño de tu ventana de Vexa**. Una ventana
+chica se le agranda del otro lado y se ve borrosa, por mas ancho de banda que
+sobre. Por eso Vexa abre ocupando casi toda la pantalla, y por eso conviene
+dejarla asi.
+
+Tres decisiones que hubo que corregir porque hacian exactamente lo contrario
+de lo que se necesita:
+
+- `contentHint` estaba en `motion`, que le dice al codificador que sacrifique
+  detalle para ganar cuadros. Un navegador es texto la mitad del tiempo: ahora
+  va en `detail`.
+- `degradationPreference` estaba en `maintain-framerate`: cuando la red no daba
+  abasto, **bajaba la resolucion**. Ahora es `maintain-resolution`: se pierde
+  algun cuadro, pero se ve nitido.
+- La captura pedia 1920 como ideal, lo que en una pantalla mas grande achicaba
+  la imagen antes de mandarla. Ahora no se pide resolucion: va la real.
+
 ## Limites conocidos
 
 - **Hay retraso.** Entre 0,2 y 0,5 segundos. Es constante, asi que se ve la peli

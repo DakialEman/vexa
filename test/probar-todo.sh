@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 SERVIDOR="http://127.0.0.1:8790"
 PAGINA="http://127.0.0.1:8124/peli"
-PAGINA2="http://127.0.0.1:8130/"
+PAGINA2="http://127.0.0.1:8160/"   # la del video de verdad
 PAGINA_ANUNCIOS="http://127.0.0.1:8125/peli"
 PAGINA_YOUTUBE="http://127.0.0.1:8150/watch"
 PAGINA_YOUTUBE_SIN_BOTON="http://127.0.0.1:8150/sinboton"

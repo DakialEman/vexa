@@ -17,6 +17,7 @@ const PUERTOS = {
   pesada: 8130,    // 190 recursos, para medir velocidad
   idioma: 8140,    // devuelve el idioma que le pidio el navegador
   youtube: 8150,   // imita el reproductor de YouTube con un anuncio
+  video: 8160,     // un <video> de verdad reproduciendose a pantalla completa
   encuentro: 8790, // el servidor de salas de verdad
 };
 
@@ -144,6 +145,24 @@ servir(PUERTOS.youtube, (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(req.url.includes('sinboton') ? YOUTUBE_SIN_BOTON : YOUTUBE_CON_BOTON);
 }, 'reproductor tipo YouTube con un anuncio');
+
+// --- Una pagina con un video de verdad reproduciendose ---
+// Sirve para comprobar que lo que se transmite incluya la imagen del video, y
+// no llegue un rectangulo negro donde deberia estar la pelicula.
+const VIDEO = `<!doctype html><meta charset="utf-8"><title>Video de prueba</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+video{width:100%;height:100%;object-fit:cover}</style>
+<video src="/video.webm" autoplay loop muted playsinline></video>`;
+
+servir(PUERTOS.video, (req, res) => {
+  if (req.url.endsWith('.webm')) {
+    const datos = require('node:fs').readFileSync(require('node:path').join(__dirname, 'fixtures', 'video.webm'));
+    res.writeHead(200, { 'Content-Type': 'video/webm', 'Content-Length': datos.length });
+    return res.end(datos);
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(VIDEO);
+}, 'un video de verdad reproduciendose');
 
 // --- El servidor de encuentro de verdad ---
 const encuentro = crearServidor();

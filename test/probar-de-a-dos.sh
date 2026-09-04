@@ -9,7 +9,7 @@ set -u
 
 SERVIDOR="${1:-http://127.0.0.1:8790}"
 PAGINA="${2:-http://127.0.0.1:8124/peli}"
-OTRA_PAGINA="${3:-http://127.0.0.1:8130/}"
+OTRA_PAGINA="${3:-http://127.0.0.1:8160/}"
 TRABAJO="$(mktemp -d)"
 trap 'rm -rf "$TRABAJO"' EXIT
 

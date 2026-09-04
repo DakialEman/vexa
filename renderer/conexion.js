@@ -22,13 +22,21 @@ const CADA_CUANTO_PREGUNTO = 1500;
 // cantidad de vueltas, porque cada vuelta puede tardar lo suyo.
 const VIDA_DE_LA_SALA = 10 * 60 * 1000;
 
-// Techo de calidad del video. 8 Mbps alcanza para 1080p con movimiento.
-const BITS_POR_SEGUNDO = 8_000_000;
+// Techo de calidad del video. Generoso: dentro de una conexion normal el
+// codificador nunca lo alcanza, pero si lo dejamos bajo se nota enseguida.
+const BITS_POR_SEGUNDO = 12_000_000;
 
-// Como capturamos el navegador interno. El alto y el ritmo son un pedido, no
-// una promesa: si la maquina no da, Chromium baja solo.
+/**
+ * Como capturamos el navegador interno.
+ *
+ * A proposito NO se pide una resolucion: se captura al tamaño real de la
+ * ventana. Antes se pedia 1920 "ideal", y en una pantalla mas grande eso
+ * terminaba achicando la imagen antes de mandarla. El ritmo si se limita:
+ * los cuadros de mas se comen el ancho de banda que preferimos gastar en que
+ * se vea nitido.
+ */
 const PEDIDO_DE_CAPTURA = {
-  video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
+  video: { frameRate: { ideal: 30, max: 30 } },
   audio: true,
 };
 
@@ -163,7 +171,14 @@ function crearSesion(avisos) {
         parametros.encodings = [{}];
       }
       parametros.encodings[0].maxBitrate = BITS_POR_SEGUNDO;
-      parametros.degradationPreference = 'maintain-framerate';
+      // Que no achique la imagen por su cuenta.
+      parametros.encodings[0].scaleResolutionDownBy = 1;
+
+      // Cuando la red no da abasto hay que sacrificar algo. Antes sacrificaba
+      // la resolucion para mantener los cuadros por segundo, y el resultado
+      // era que el otro veia todo borroso: el texto de una pagina se volvia
+      // ilegible. Preferimos perder algun cuadro y que se vea nitido.
+      parametros.degradationPreference = 'maintain-resolution';
       await emisor.setParameters(parametros);
     } catch (error) {
       // No es fatal: se transmite igual, con la calidad que decida Chromium.
@@ -186,9 +201,10 @@ function crearSesion(avisos) {
       throw new Error('La captura no devolvio imagen.');
     }
 
-    // Le avisamos a Chromium que esto es video con movimiento, no texto quieto:
-    // asi prioriza que sea fluido antes que perfectamente nitido.
-    pista.contentHint = 'motion';
+    // Le decimos a Chromium que priorice el detalle. Lo que se transmite es un
+    // navegador: la mitad del tiempo es texto, y con la pista puesta en
+    // 'motion' el codificador tiraba nitidez por la borda para ganar cuadros.
+    pista.contentHint = 'detail';
 
     if (stream.getAudioTracks().length === 0) {
       avisos.alAviso('Se transmite la imagen, pero no se pudo capturar el audio de la pagina.');
@@ -347,9 +363,18 @@ function crearSesion(avisos) {
     avisos.alEstado('closed');
   }
 
+  /** Estadisticas crudas de la conexion, para medir la calidad que llega. */
+  async function estadisticas() {
+    if (!conexion) return [];
+    const informes = [];
+    for (const informe of await conexion.getStats()) informes.push(informe[1]);
+    return informes;
+  }
+
   return {
     abrirSala,
     cortar,
+    estadisticas,
     entrarASala,
     enviar,
     get papel() {

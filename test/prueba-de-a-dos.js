@@ -156,6 +156,24 @@
       if (cuadros === 0) throw new Error('llego el video pero no se reprodujo ningun cuadro');
       anotar('video reproduciendose', `${cuadros} cuadros`);
 
+      // --- Que calidad esta llegando de verdad ---
+      // Le damos tiempo a que el codificador suba: WebRTC arranca conservador
+      // y va subiendo la calidad a medida que ve que la red aguanta.
+      await esperar(8000);
+
+      let medicion = null;
+      for (const informe of await sesion.estadisticas()) {
+        if (informe.type === 'inbound-rtp' && informe.kind === 'video') medicion = informe;
+      }
+
+      if (medicion) {
+        anotar('resolucion recibida', `${medicion.frameWidth}x${medicion.frameHeight}`);
+        anotar('cuadros por segundo', String(medicion.framesPerSecond ?? '?'));
+        anotar('bytes recibidos', String(medicion.bytesReceived));
+      } else {
+        anotar('medicion', 'no se pudo leer las estadisticas');
+      }
+
       // --- Pantalla completa, que es como se mira una pelicula ---
       // Esta prueba usa su propia sesion, asi que el video no paso por la
       // pantalla de la app: se lo damos nosotros, como haria ella.
@@ -230,6 +248,43 @@
           throw new Error('el video se congelo cuando el anfitrion cambio de pagina');
         }
         anotar('el video sigue llegando', 'la captura sobrevivio al cambio de pagina');
+
+        // --- Y ademas: lo que llega tiene imagen, no un rectangulo negro ---
+        // Si el anfitrion esta mirando un video y aca llega todo negro, la
+        // imagen del video no se esta capturando: es el problema clasico de las
+        // peliculas que se ven como un rectangulo negro del otro lado.
+        const lienzo = document.createElement('canvas');
+        const mirilla = document.createElement('video');
+        mirilla.srcObject = videoRecibido;
+        mirilla.muted = true;
+        await mirilla.play().catch(() => {});
+        await esperar(2000);
+
+        lienzo.width = mirilla.videoWidth || 320;
+        lienzo.height = mirilla.videoHeight || 180;
+        const pincel = lienzo.getContext('2d');
+        pincel.drawImage(mirilla, 0, 0, lienzo.width, lienzo.height);
+        const pixeles = pincel.getImageData(0, 0, lienzo.width, lienzo.height).data;
+
+        let claros = 0;
+        let brilloTotal = 0;
+        for (let i = 0; i < pixeles.length; i += 4) {
+          const brillo = (pixeles[i] + pixeles[i + 1] + pixeles[i + 2]) / 3;
+          brilloTotal += brillo;
+          if (brillo > 24) claros += 1;
+        }
+        const total = pixeles.length / 4;
+        const porcentajeClaro = Math.round((claros / total) * 100);
+        mirilla.pause();
+        mirilla.srcObject = null;
+
+        anotar('tamaño de lo que recibo', `${lienzo.width}x${lienzo.height}`);
+        anotar('pixeles con contenido', `${porcentajeClaro}% (brillo medio ${Math.round(brilloTotal / total)})`);
+        if (porcentajeClaro < 2) {
+          throw new Error('lo que llega es practicamente todo negro');
+        }
+
+
       }
 
       return { ok: true, pasos };
